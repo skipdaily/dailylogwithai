@@ -278,10 +278,13 @@ const Section: React.FC<SectionProps> = ({ title, icon: Icon, children, showActi
     const sourceTypeMap: { [key: string]: string } = {
       'meetings': 'meeting',
       'outOfScope': 'out_of_scope', 
-      'actionItems': 'action_item',
+      'workItems': 'action_item',
+      'delays': 'observation',
+      'tradesOnsite': 'observation',
+      'nextDayPlan': 'action_item',
       'notes': 'observation'
     };
-    return sourceTypeMap[sectionType || ''] || 'action_item';
+    return sourceTypeMap[sectionType || ''] || 'observation';
   };
 
   return (
@@ -292,27 +295,6 @@ const Section: React.FC<SectionProps> = ({ title, icon: Icon, children, showActi
             <Icon className="h-5 w-5 text-blue-600" />
             <h3 className="text-lg font-semibold text-gray-800">{title}</h3>
           </div>
-          {showActionButton && onCreateActionItem && sectionType && (
-            <button
-              onClick={() => {
-                // Get selected text from the current section
-                const selection = window.getSelection();
-                const selectedText = selection?.toString().trim() || '';
-                
-                setActionFormData({
-                  ...actionFormData,
-                  title: selectedText,
-                  source_type: getSourceType() as any
-                });
-                setShowActionModal(true);
-              }}
-              className="bg-green-600 text-white px-3 py-1 rounded-md text-sm hover:bg-green-700 transition-colors flex items-center gap-1"
-              title="Create Action Item"
-            >
-              <Plus className="w-4 h-4" />
-              Action Item
-            </button>
-          )}
         </div>
         {children}
       </div>
@@ -480,15 +462,41 @@ const TextItemsList = ({
   items, 
   setItems, 
   placeholder,
-  rows = 3
+  rows = 3,
+  onCreateActionItem,
+  sectionType,
+  crewMembers = [],
+  subcontractors = []
 }: { 
   items: TextItem[], 
   setItems: (items: TextItem[]) => void,
   placeholder: string,
-  rows?: number
+  rows?: number,
+  onCreateActionItem?: (sectionType: string, title: string, details?: {
+    description?: string;
+    priority?: string;
+    assignedTo?: string;
+    dueDate?: string;
+  }) => Promise<void>,
+  sectionType?: string,
+  crewMembers?: any[],
+  subcontractors?: any[]
 }) => {
   // Ensure items is always an array
   const safeItems = Array.isArray(items) ? items : [{ id: generateId(), text: '' }];
+  
+  // Modal state for individual action items
+  const [showActionModal, setShowActionModal] = useState(false);
+  const [selectedItemText, setSelectedItemText] = useState('');
+  const [actionFormData, setActionFormData] = useState({
+    title: '',
+    description: '',
+    source_type: 'action_item' as 'meeting' | 'out_of_scope' | 'action_item' | 'observation',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
+    status: 'open' as 'open' | 'in_progress' | 'completed' | 'on_hold' | 'cancelled',
+    assignedTo: '',
+    dueDate: ''
+  });
   
   const addItem = () => {
     setItems([...safeItems, { id: generateId(), text: '' }]);
@@ -505,35 +513,274 @@ const TextItemsList = ({
     setItems(safeItems.filter(item => item.id !== id));
   };
 
+  const handleCreateActionFromItem = (itemText: string) => {
+    if (itemText.trim()) {
+      // Create a concise title from the text (first sentence or up to 100 chars)
+      let title = itemText.trim();
+      const firstSentence = title.split(/[.!?]/)[0];
+      if (firstSentence.length > 0 && firstSentence.length < 100) {
+        title = firstSentence.trim();
+      } else if (title.length > 100) {
+        title = title.substring(0, 97) + '...';
+      }
+
+      // Map section types to source types
+      const getSourceType = () => {
+        const sourceTypeMap: { [key: string]: string } = {
+          'meetings': 'meeting',
+          'outOfScope': 'out_of_scope', 
+          'workItems': 'action_item',
+          'delays': 'observation',
+          'tradesOnsite': 'observation',
+          'nextDayPlan': 'action_item',
+          'notes': 'observation'
+        };
+        return sourceTypeMap[sectionType || ''] || 'observation';
+      };
+
+      setSelectedItemText(itemText);
+      setActionFormData({
+        title: title,
+        description: itemText.trim(), // Full text goes in description
+        source_type: getSourceType() as any,
+        priority: 'medium',
+        status: 'open',
+        assignedTo: '',
+        dueDate: ''
+      });
+      setShowActionModal(true);
+    }
+  };
+
+  const handleCreateAction = async () => {
+    if (actionFormData.title.trim() && onCreateActionItem && sectionType) {
+      try {
+        await onCreateActionItem(sectionType, actionFormData.title, {
+          description: actionFormData.description,
+          priority: actionFormData.priority,
+          assignedTo: actionFormData.assignedTo,
+          dueDate: actionFormData.dueDate
+        });
+        
+        // Reset form and close modal
+        setActionFormData({
+          title: '',
+          description: '',
+          source_type: 'action_item',
+          priority: 'medium',
+          status: 'open',
+          assignedTo: '',
+          dueDate: ''
+        });
+        setShowActionModal(false);
+      } catch (error) {
+        console.error('Error creating action item:', error);
+      }
+    }
+  };
+
   return (
-    <div>
-      {safeItems.map(item => (
-        <div key={item.id} className="flex gap-2 mb-3">
-          <textarea
-            value={item.text}
-            onChange={(e) => updateItem(item.id, e.target.value)}
-            placeholder={placeholder}
-            rows={rows}
-            className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-          />
-          <button
-            onClick={() => removeItem(item.id)}
-            className="text-red-600 hover:text-red-800 p-2"
-            type="button"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+    <>
+      <div>
+        {safeItems.map(item => (
+          <div key={item.id} className="flex gap-2 mb-3">
+            <textarea
+              value={item.text}
+              onChange={(e) => updateItem(item.id, e.target.value)}
+              placeholder={placeholder}
+              rows={rows}
+              className="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            />
+            <div className="flex flex-col gap-1">
+              {/* Action Item button - only show if there's text and we have the create function */}
+              {item.text.trim() && onCreateActionItem && sectionType && (
+                <button
+                  onClick={() => handleCreateActionFromItem(item.text)}
+                  className="bg-green-600 text-white px-2 py-2 rounded-md text-xs hover:bg-green-700 transition-colors flex items-center gap-1"
+                  type="button"
+                  title="Create Action Item from this note"
+                >
+                  <Plus className="h-3 w-3" />
+                  Action
+                </button>
+              )}
+              {/* Trash button */}
+              <button
+                onClick={() => removeItem(item.id)}
+                className="text-red-600 hover:text-red-800 p-2"
+                type="button"
+                title="Remove item"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ))}
+        <button
+          onClick={addItem}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+          type="button"
+        >
+          <Plus className="h-4 w-4" />
+          Add Item
+        </button>
+      </div>
+
+      {/* Action Item Creation Modal */}
+      {showActionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">Add New Action Item</h2>
+            
+            <form onSubmit={(e) => { e.preventDefault(); handleCreateAction(); }} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={actionFormData.title}
+                    onChange={(e) => setActionFormData({ ...actionFormData, title: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter action item title"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Description
+                  </label>
+                  <textarea
+                    value={actionFormData.description}
+                    onChange={(e) => setActionFormData({ ...actionFormData, description: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter detailed description"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Source Type
+                  </label>
+                  <select
+                    value={actionFormData.source_type}
+                    onChange={(e) => setActionFormData({ ...actionFormData, source_type: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="action_item">Action Item</option>
+                    <option value="meeting">Meeting/Discussion</option>
+                    <option value="out_of_scope">Out-of-Scope Work</option>
+                    <option value="observation">Observation/Note</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Project
+                  </label>
+                  <select
+                    value=""
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
+                  >
+                    <option value="">Will use current project</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Assigned To
+                  </label>
+                  <AssignedToAutocomplete
+                    value={actionFormData.assignedTo}
+                    onChange={(value) => setActionFormData({ ...actionFormData, assignedTo: value })}
+                    crewMembers={crewMembers}
+                    subcontractors={subcontractors}
+                    placeholder="Type to search crew/contractors or enter custom name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Priority
+                  </label>
+                  <select
+                    value={actionFormData.priority}
+                    onChange={(e) => setActionFormData({ ...actionFormData, priority: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={actionFormData.status}
+                    onChange={(e) => setActionFormData({ ...actionFormData, status: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="on_hold">On Hold</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Due Date
+                  </label>
+                  <input
+                    type="date"
+                    value={actionFormData.dueDate}
+                    onChange={(e) => setActionFormData({ ...actionFormData, dueDate: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowActionModal(false);
+                    setActionFormData({
+                      title: '',
+                      description: '',
+                      source_type: 'action_item',
+                      priority: 'medium',
+                      status: 'open',
+                      assignedTo: '',
+                      dueDate: ''
+                    });
+                  }}
+                  className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!actionFormData.title.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  Add Action Item
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
-      ))}
-      <button
-        onClick={addItem}
-        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-        type="button"
-      >
-        <Plus className="h-4 w-4" />
-        Add Item
-      </button>
-    </div>
+      )}
+    </>
   );
 };
 
@@ -703,13 +950,39 @@ const CrewManager = ({
 // Trades list component
 const TradesList = ({ 
   trades, 
-  setTrades 
+  setTrades,
+  onCreateActionItem,
+  sectionType,
+  crewMembers = [],
+  subcontractors = []
 }: { 
   trades: TextItem[], 
-  setTrades: (trades: TextItem[]) => void
+  setTrades: (trades: TextItem[]) => void,
+  onCreateActionItem?: (sectionType: string, title: string, details?: {
+    description?: string;
+    priority?: string;
+    assignedTo?: string;
+    dueDate?: string;
+  }) => Promise<void>,
+  sectionType?: string,
+  crewMembers?: any[],
+  subcontractors?: any[]
 }) => {
   // Ensure trades is always an array
   const safeTrades = Array.isArray(trades) ? trades : [{ id: generateId(), text: '' }];
+  
+  // Modal state for individual action items
+  const [showActionModal, setShowActionModal] = useState(false);
+  const [selectedTradeText, setSelectedTradeText] = useState('');
+  const [actionFormData, setActionFormData] = useState({
+    title: '',
+    description: '',
+    source_type: 'action_item' as 'meeting' | 'out_of_scope' | 'action_item' | 'observation',
+    priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
+    status: 'open' as 'open' | 'in_progress' | 'completed' | 'on_hold' | 'cancelled',
+    assignedTo: '',
+    dueDate: ''
+  });
   
   const addTrade = () => {
     setTrades([...safeTrades, { id: generateId(), text: '' }]);
@@ -726,8 +999,58 @@ const TradesList = ({
     setTrades(safeTrades.filter(trade => trade.id !== id));
   };
 
+  const handleCreateActionFromTrade = (tradeText: string) => {
+    if (tradeText.trim()) {
+      // Create a concise title from the text
+      let title = tradeText.trim();
+      if (title.length > 100) {
+        title = title.substring(0, 97) + '...';
+      }
+
+      setSelectedTradeText(tradeText);
+      setActionFormData({
+        title: title,
+        description: tradeText.trim(), // Full text goes in description
+        source_type: 'observation',
+        priority: 'medium',
+        status: 'open',
+        assignedTo: '',
+        dueDate: ''
+      });
+      setShowActionModal(true);
+    }
+  };
+
+  const handleCreateAction = async () => {
+    if (actionFormData.title.trim() && onCreateActionItem && sectionType) {
+      try {
+        await onCreateActionItem(sectionType, actionFormData.title, {
+          description: actionFormData.description,
+          priority: actionFormData.priority,
+          assignedTo: actionFormData.assignedTo,
+          dueDate: actionFormData.dueDate
+        });
+        
+        // Reset form and close modal
+        setActionFormData({
+          title: '',
+          description: '',
+          source_type: 'action_item',
+          priority: 'medium',
+          status: 'open',
+          assignedTo: '',
+          dueDate: ''
+        });
+        setShowActionModal(false);
+      } catch (error) {
+        console.error('Error creating action item:', error);
+      }
+    }
+  };
+
   return (
-    <div>
+    <>
+      <div>
       {safeTrades.map(trade => (
         <div key={trade.id} className="flex gap-2 mb-3">
           <input
@@ -737,13 +1060,29 @@ const TradesList = ({
             placeholder="Enter trade name (e.g., JLS, HTI - windows and sliders, OJV - Sheet Metal)"
             className="flex-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
-          <button
-            onClick={() => removeTrade(trade.id)}
-            className="text-red-600 hover:text-red-800 p-2"
-            type="button"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
+          <div className="flex flex-col gap-1">
+            {/* Action Item button - only show if there's text and we have the create function */}
+            {trade.text.trim() && onCreateActionItem && sectionType && (
+              <button
+                onClick={() => handleCreateActionFromTrade(trade.text)}
+                className="bg-green-600 text-white px-2 py-2 rounded-md text-xs hover:bg-green-700 transition-colors flex items-center gap-1"
+                type="button"
+                title="Create Action Item from this trade"
+              >
+                <Plus className="h-3 w-3" />
+                Action
+              </button>
+            )}
+            {/* Trash button */}
+            <button
+              onClick={() => removeTrade(trade.id)}
+              className="text-red-600 hover:text-red-800 p-2"
+              type="button"
+              title="Remove trade"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       ))}
       <button
@@ -755,6 +1094,162 @@ const TradesList = ({
         Add Trade
       </button>
     </div>
+
+    {/* Action Item Creation Modal */}
+    {showActionModal && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <h2 className="text-xl font-bold mb-4">Add New Action Item</h2>
+          
+          <form onSubmit={(e) => { e.preventDefault(); handleCreateAction(); }} className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Title *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={actionFormData.title}
+                  onChange={(e) => setActionFormData({ ...actionFormData, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter action item title"
+                />
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={actionFormData.description}
+                  onChange={(e) => setActionFormData({ ...actionFormData, description: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Enter detailed description"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Source Type
+                </label>
+                <select
+                  value={actionFormData.source_type}
+                  onChange={(e) => setActionFormData({ ...actionFormData, source_type: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="action_item">Action Item</option>
+                  <option value="meeting">Meeting/Discussion</option>
+                  <option value="out_of_scope">Out-of-Scope Work</option>
+                  <option value="observation">Observation/Note</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Project
+                </label>
+                <select
+                  value=""
+                  disabled
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
+                >
+                  <option value="">Will use current project</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assigned To
+                </label>
+                <AssignedToAutocomplete
+                  value={actionFormData.assignedTo}
+                  onChange={(value) => setActionFormData({ ...actionFormData, assignedTo: value })}
+                  crewMembers={crewMembers}
+                  subcontractors={subcontractors}
+                  placeholder="Type to search crew/contractors or enter custom name"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Priority
+                </label>
+                <select
+                  value={actionFormData.priority}
+                  onChange={(e) => setActionFormData({ ...actionFormData, priority: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="low">Low</option>
+                  <option value="medium">Medium</option>
+                  <option value="high">High</option>
+                  <option value="urgent">Urgent</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <select
+                  value={actionFormData.status}
+                  onChange={(e) => setActionFormData({ ...actionFormData, status: e.target.value as any })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                >
+                  <option value="open">Open</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="on_hold">On Hold</option>
+                  <option value="cancelled">Cancelled</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Due Date
+                </label>
+                <input
+                  type="date"
+                  value={actionFormData.dueDate}
+                  onChange={(e) => setActionFormData({ ...actionFormData, dueDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowActionModal(false);
+                  setActionFormData({
+                    title: '',
+                    description: '',
+                    source_type: 'action_item',
+                    priority: 'medium',
+                    status: 'open',
+                    assignedTo: '',
+                    dueDate: ''
+                  });
+                }}
+                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!actionFormData.title.trim()}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+              >
+                Add Action Item
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    )}
+  </>
   );
 };
 
@@ -1102,7 +1597,10 @@ const ConstructionDailyLog = () => {
       const sourceTypeMap: { [key: string]: string } = {
         'meetings': 'meeting',
         'outOfScope': 'out_of_scope', 
-        'actionItems': 'action_item',
+        'workItems': 'action_item',
+        'delays': 'observation',
+        'tradesOnsite': 'observation',
+        'nextDayPlan': 'action_item',
         'notes': 'observation'
       };
 
@@ -1270,6 +1768,10 @@ const ConstructionDailyLog = () => {
             items={logData.workItems || createDefaultArray()} 
             setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, workItems: newItems }))} 
             placeholder="Describe work performed..."
+            onCreateActionItem={createActionItem}
+            sectionType="workItems"
+            crewMembers={availableCrews}
+            subcontractors={availableSubcontractors}
           />
         </Section>
 
@@ -1279,6 +1781,10 @@ const ConstructionDailyLog = () => {
             items={logData.delays || createDefaultArray()} 
             setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, delays: newItems }))} 
             placeholder="Describe delays or disruptions..."
+            onCreateActionItem={createActionItem}
+            sectionType="delays"
+            crewMembers={availableCrews}
+            subcontractors={availableSubcontractors}
           />
         </Section>
 
@@ -1287,6 +1793,10 @@ const ConstructionDailyLog = () => {
           <TradesList 
             trades={logData.tradesOnsite || createDefaultArray()} 
             setTrades={(newTrades: TextItem[]) => setLogData(prev => ({ ...prev, tradesOnsite: newTrades }))} 
+            onCreateActionItem={createActionItem}
+            sectionType="tradesOnsite"
+            crewMembers={availableCrews}
+            subcontractors={availableSubcontractors}
           />
         </Section>
 
@@ -1294,7 +1804,6 @@ const ConstructionDailyLog = () => {
         <Section 
           title="4. Meetings / Discussions" 
           icon={MessageSquare}
-          showActionButton={true}
           onCreateActionItem={createActionItem}
           sectionType="meetings"
           crewMembers={availableCrews}
@@ -1305,6 +1814,10 @@ const ConstructionDailyLog = () => {
             setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, meetings: newItems }))} 
             placeholder="Describe meetings and discussions..."
             rows={4}
+            onCreateActionItem={createActionItem}
+            sectionType="meetings"
+            crewMembers={availableCrews}
+            subcontractors={availableSubcontractors}
           />
         </Section>
 
@@ -1312,7 +1825,6 @@ const ConstructionDailyLog = () => {
         <Section 
           title="5. Out-of-Scope / Extra Work Identified" 
           icon={FileText}
-          showActionButton={true}
           onCreateActionItem={createActionItem}
           sectionType="outOfScope"
           crewMembers={availableCrews}
@@ -1322,6 +1834,10 @@ const ConstructionDailyLog = () => {
             items={logData.outOfScope || createDefaultArray()} 
             setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, outOfScope: newItems }))} 
             placeholder="Describe out-of-scope or extra work..."
+            onCreateActionItem={createActionItem}
+            sectionType="outOfScope"
+            crewMembers={availableCrews}
+            subcontractors={availableSubcontractors}
           />
         </Section>
 
@@ -1331,6 +1847,10 @@ const ConstructionDailyLog = () => {
             items={logData.nextDayPlan || createDefaultArray()} 
             setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, nextDayPlan: newItems }))} 
             placeholder="Describe tomorrow's plan..."
+            onCreateActionItem={createActionItem}
+            sectionType="nextDayPlan"
+            crewMembers={availableCrews}
+            subcontractors={availableSubcontractors}
           />
         </Section>
 
@@ -1338,7 +1858,6 @@ const ConstructionDailyLog = () => {
         <Section 
           title="7. Notes / Observations" 
           icon={Eye}
-          showActionButton={true}
           onCreateActionItem={createActionItem}
           sectionType="notes"
           crewMembers={availableCrews}
@@ -1348,6 +1867,10 @@ const ConstructionDailyLog = () => {
             items={logData.notes || createDefaultArray()} 
             setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, notes: newItems }))} 
             placeholder="Add notes and observations..."
+            onCreateActionItem={createActionItem}
+            sectionType="notes"
+            crewMembers={availableCrews}
+            subcontractors={availableSubcontractors}
           />
         </Section>
       </div>

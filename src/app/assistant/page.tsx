@@ -8,6 +8,8 @@ interface Message {
   content: string;
   timestamp: string;
   logsAnalyzed?: number;
+  actionItemsAnalyzed?: number;
+  notesAnalyzed?: number;
 }
 
 interface Chat {
@@ -383,7 +385,10 @@ export default function AssistantPage() {
       const aiMessage: Message = {
         role: 'assistant',
         content: enhancedResponse,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        logsAnalyzed: data.logsAnalyzed,
+        actionItemsAnalyzed: data.actionItemsAnalyzed,
+        notesAnalyzed: data.notesAnalyzed
       };
 
       updateChatWithMessage(currentChatId, aiMessage);
@@ -467,9 +472,17 @@ export default function AssistantPage() {
                   }`}
                 >
                   <div className="whitespace-pre-wrap">{message.content}</div>
-                  {message.logsAnalyzed !== undefined && (
-                    <div className="text-xs text-gray-500 mt-2">
-                      Analyzed {message.logsAnalyzed} recent logs
+                  {(message.logsAnalyzed !== undefined || message.actionItemsAnalyzed !== undefined || message.notesAnalyzed !== undefined) && (
+                    <div className="text-xs text-gray-500 mt-2 space-y-1">
+                      {message.logsAnalyzed !== undefined && (
+                        <div>📊 Analyzed {message.logsAnalyzed} recent logs</div>
+                      )}
+                      {message.actionItemsAnalyzed !== undefined && (
+                        <div>📋 Analyzed {message.actionItemsAnalyzed} action items</div>
+                      )}
+                      {message.notesAnalyzed !== undefined && (
+                        <div>📝 Analyzed {message.notesAnalyzed} recent notes</div>
+                      )}
                     </div>
                   )}
                   <div className="text-xs opacity-70 mt-2">
@@ -545,15 +558,29 @@ export default function AssistantPage() {
               📊 Recent Activity
             </button>
             <button
-              onClick={() => setQuery("What projects need the most attention?")}
+              onClick={() => setQuery("What are the latest updates on action items?")}
+              className="p-2 bg-green-50 text-green-700 rounded border border-green-200 hover:bg-green-100 transition-colors text-left"
+            >
+              📝 Latest Notes & Updates
+            </button>
+            <button
+              onClick={() => setQuery("What approvals and decisions were made recently?")}
               className="p-2 bg-purple-50 text-purple-700 rounded border border-purple-200 hover:bg-purple-100 transition-colors text-left"
             >
-              🎯 Project Focus
+              ✅ Recent Approvals
+            </button>
+            <button
+              onClick={() => setQuery("Show me action items with pricing discussions")}
+              className="p-2 bg-orange-50 text-orange-700 rounded border border-orange-200 hover:bg-orange-100 transition-colors text-left"
+            >
+              💰 Pricing Updates
             </button>
           </div>
           
           <div className="mt-3 text-xs text-gray-600">
             <strong>Database Actions:</strong> Try commands like "Mark action item #123 as completed" or "Change priority of item #456 to urgent"
+            <br />
+            <strong>Note Analysis:</strong> Ask about "recent notes", "latest updates", or "what's the current status of [project/item]"
           </div>
         </div>
 

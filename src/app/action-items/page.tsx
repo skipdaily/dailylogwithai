@@ -522,150 +522,138 @@ function ActionItemsContent() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex justify-between items-center">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+        {/* Simplified Header */}
+        <div className="mb-6">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">Action Items</h1>
-              <p className="mt-1 text-gray-600">Track and manage construction action items</p>
+              <h1 className="text-2xl font-bold text-gray-900">Action Items</h1>
+              <div className="flex items-center gap-4 mt-1 text-sm text-gray-600">
+                <span className="flex items-center gap-1">
+                  <FileText className="w-4 h-4" />
+                  {openItems} Open
+                </span>
+                <span className="flex items-center gap-1">
+                  <Clock className="w-4 h-4 text-blue-600" />
+                  {inProgressItems} In Progress
+                </span>
+                <span className="flex items-center gap-1">
+                  <CheckCircle className="w-4 h-4 text-green-600" />
+                  {completedItems} Completed
+                </span>
+                <span className="text-gray-400">•</span>
+                <span>{filteredItems.length} Total</span>
+              </div>
             </div>
             <button
               onClick={() => setShowAddForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
             >
-              <Plus className="w-5 h-5" />
-              Add Action Item
+              <Plus className="w-4 h-4" />
+              Add Item
             </button>
-          </div>
-
-          {/* Stats */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="flex items-center">
-                <FileText className="w-8 h-8 text-gray-600" />
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-600">Open</p>
-                  <p className="text-2xl font-bold text-gray-900">{openItems}</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="flex items-center">
-                <Clock className="w-8 h-8 text-blue-600" />
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-600">In Progress</p>
-                  <p className="text-2xl font-bold text-gray-900">{inProgressItems}</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="flex items-center">
-                <CheckCircle className="w-8 h-8 text-green-600" />
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-600">Completed</p>
-                  <p className="text-2xl font-bold text-gray-900">{completedItems}</p>
-                </div>
-              </div>
-            </div>
-            <div className="bg-white p-4 rounded-lg shadow">
-              <div className="flex items-center">
-                <AlertTriangle className="w-8 h-8 text-orange-600" />
-                <div className="ml-3">
-                  <p className="text-sm font-medium text-gray-600">Total</p>
-                  <p className="text-2xl font-bold text-gray-900">{filteredItems.length}</p>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 
         {/* Error/Success Messages */}
         {error && (
           <div className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center">
-            <AlertCircle className="w-5 h-5 mr-2" />
+            <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
             {error}
           </div>
         )}
 
         {success && (
           <div className="mb-4 bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg flex items-center">
-            <CheckCircle className="w-5 h-5 mr-2" />
+            <CheckCircle className="w-5 h-5 mr-2 flex-shrink-0" />
             {success}
           </div>
         )}
 
-        {/* Filters */}
-        <div className="mb-6 bg-white p-4 rounded-lg shadow">
-          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Search action items..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
+        {/* Compact Filters */}
+        <div className="mb-6 bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex flex-col lg:flex-row gap-3">
+            {/* Search takes more space */}
+            <div className="flex-1 min-w-0">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+                <input
+                  type="text"
+                  placeholder="Search action items..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-9 w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm"
+                />
+              </div>
             </div>
 
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">All Statuses</option>
-              <option value="open">Open</option>
-              <option value="in_progress">In Progress</option>
-              <option value="completed">Completed</option>
-              <option value="on_hold">On Hold</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
+            {/* Compact filter controls */}
+            <div className="flex gap-2 flex-wrap lg:flex-nowrap">
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm min-w-0"
+              >
+                <option value="">All Status</option>
+                <option value="open">Open</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="on_hold">On Hold</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
 
-            <select
-              value={filterPriority}
-              onChange={(e) => setFilterPriority(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">All Priorities</option>
-              <option value="urgent">Urgent</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
+              <select
+                value={filterPriority}
+                onChange={(e) => setFilterPriority(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm min-w-0"
+              >
+                <option value="">All Priority</option>
+                <option value="urgent">Urgent</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
 
-            <select
-              value={filterProject}
-              onChange={(e) => setFilterProject(e.target.value)}
-              className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="">All Projects</option>
-              {projects.map(project => (
-                <option key={project.id} value={project.id}>{project.name}</option>
-              ))}
-            </select>
+              <select
+                value={filterProject}
+                onChange={(e) => setFilterProject(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm min-w-0"
+              >
+                <option value="">All Projects</option>
+                {projects.map(project => (
+                  <option key={project.id} value={project.id}>{project.name}</option>
+                ))}
+              </select>
 
-            <button
-              onClick={() => {
-                setSearchTerm('');
-                setFilterStatus('');
-                setFilterPriority('');
-                setFilterProject('');
-              }}
-              className="px-4 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              Clear Filters
-            </button>
+              {(searchTerm || filterStatus || filterPriority || filterProject) && (
+                <button
+                  onClick={() => {
+                    setSearchTerm('');
+                    setFilterStatus('');
+                    setFilterPriority('');
+                    setFilterProject('');
+                  }}
+                  className="px-3 py-2 text-gray-600 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors text-sm whitespace-nowrap"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Action Items List */}
-        <div className="bg-white rounded-lg shadow">
+        {/* Streamlined Action Items List */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
           {filteredItems.length === 0 ? (
             <div className="text-center py-12">
               <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No action items found</h3>
-              <p className="text-gray-600 mb-4">Get started by creating your first action item</p>
+              <p className="text-gray-600 mb-4">
+                {searchTerm || filterStatus || filterPriority || filterProject 
+                  ? "Try adjusting your filters or search terms"
+                  : "Get started by creating your first action item"
+                }
+              </p>
               <button
                 onClick={() => setShowAddForm(true)}
                 className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
@@ -678,13 +666,12 @@ function ActionItemsContent() {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned To</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Project</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned</th>
+                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due</th>
+                    <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -694,32 +681,43 @@ function ActionItemsContent() {
                         className="hover:bg-gray-50 cursor-pointer"
                         onClick={() => toggleItemExpansion(item.id)}
                       >
-                        <td className="px-6 py-4">
+                        <td className="px-4 py-3">
                           <div>
-                            <div className="text-sm font-medium text-gray-900 flex items-center">
-                              <span className="mr-2">
+                            <div className="flex items-start gap-2">
+                              <span className="text-gray-400 mt-0.5">
                                 {expandedItems.has(item.id) ? '▼' : '▶'}
                               </span>
-                              {item.title}
-                            </div>
-                            {item.description && (
-                              <div className="text-sm text-gray-500 mt-1 ml-6">{item.description}</div>
-                            )}
-                            <div className="text-xs text-gray-400 mt-1 ml-6 capitalize">
-                              Source: {item.source_type.replace('_', ' ')}
+                              <div className="min-w-0">
+                                <div className="text-sm font-medium text-gray-900 truncate">
+                                  {item.title}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-xs text-gray-500 capitalize">
+                                    {item.source_type.replace('_', ' ')}
+                                  </span>
+                                  {item.projects?.name && (
+                                    <>
+                                      <span className="text-gray-300">•</span>
+                                      <span className="text-xs text-gray-500 truncate">
+                                        {item.projects.name}
+                                      </span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium capitalize ${getPriorityColor(item.priority)}`}>
+                        <td className="px-3 py-3">
+                          <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${getPriorityColor(item.priority)}`}>
                             {item.priority}
                           </span>
                         </td>
-                        <td className="px-6 py-4" onClick={(e) => e.stopPropagation()}>
+                        <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
                           <select
                             value={item.status}
                             onChange={(e) => handleStatusChange(item.id, e.target.value)}
-                            className={`text-xs rounded-full px-2 py-1 border-0 font-medium capitalize ${getStatusColor(item.status)}`}
+                            className={`text-xs rounded-full px-2 py-1 border-0 font-medium capitalize ${getStatusColor(item.status)} cursor-pointer`}
                           >
                             <option value="open">Open</option>
                             <option value="in_progress">In Progress</option>
@@ -728,34 +726,35 @@ function ActionItemsContent() {
                             <option value="cancelled">Cancelled</option>
                           </select>
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
+                        <td className="px-3 py-3 text-sm text-gray-900 truncate max-w-32">
                           {item.assigned_to || '-'}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {item.due_date ? new Date(item.due_date).toLocaleDateString() : '-'}
+                        <td className="px-3 py-3 text-sm text-gray-900">
+                          {item.due_date ? (
+                            <span className={`text-xs ${new Date(item.due_date) < new Date() ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                              {new Date(item.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </span>
+                          ) : '-'}
                         </td>
-                        <td className="px-6 py-4 text-sm text-gray-900">
-                          {item.projects?.name || '-'}
-                        </td>
-                        <td className="px-6 py-4 text-sm font-medium" onClick={(e) => e.stopPropagation()}>
-                          <div className="flex items-center space-x-2">
+                        <td className="px-3 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => showNotes(item)}
-                              className="text-blue-600 hover:text-blue-900 p-1 rounded"
+                              className="text-gray-400 hover:text-blue-600 p-1 rounded transition-colors"
                               title="View Notes"
                             >
                               <MessageSquare className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleEdit(item)}
-                              className="text-indigo-600 hover:text-indigo-900 p-1 rounded"
+                              className="text-gray-400 hover:text-indigo-600 p-1 rounded transition-colors"
                               title="Edit"
                             >
                               <Edit2 className="w-4 h-4" />
                             </button>
                             <button
                               onClick={() => handleDelete(item.id)}
-                              className="text-red-600 hover:text-red-900 p-1 rounded"
+                              className="text-gray-400 hover:text-red-600 p-1 rounded transition-colors"
                               title="Delete"
                             >
                               <Trash2 className="w-4 h-4" />
@@ -764,35 +763,55 @@ function ActionItemsContent() {
                         </td>
                       </tr>
 
-                      {/* Expandable Notes Section */}
+                      {/* Expandable Details Section */}
                       {expandedItems.has(item.id) && (
                         <tr>
-                          <td colSpan={7} className="px-6 py-4 bg-gray-50">
-                            <div className="ml-6">
-                              <h4 className="text-sm font-medium text-gray-900 mb-3 flex items-center">
-                                <MessageSquare className="w-4 h-4 mr-2" />
-                                Notes ({itemNotesCache[item.id]?.length || 0})
-                              </h4>
-
-                              {itemNotesCache[item.id]?.length > 0 ? (
-                                <div className="space-y-3 max-h-60 overflow-y-auto">
-                                  {itemNotesCache[item.id].map((note) => (
-                                    <div key={note.id} className="bg-white p-3 rounded-lg border border-gray-200">
-                                      <div className="text-sm text-gray-800 mb-2">{note.note}</div>
-                                      <div className="text-xs text-gray-500 flex items-center justify-between">
-                                        <span>By: {note.created_by}</span>
-                                        <span>{formatTimestamp(note.created_at)}</span>
-                                      </div>
-                                    </div>
-                                  ))}
+                          <td colSpan={6} className="px-4 py-4 bg-gray-50 border-t border-gray-100">
+                            <div className="ml-6 space-y-4">
+                              {/* Description */}
+                              {item.description && (
+                                <div>
+                                  <h4 className="text-sm font-medium text-gray-900 mb-2">Description</h4>
+                                  <p className="text-sm text-gray-700 bg-white p-3 rounded border">{item.description}</p>
                                 </div>
-                              ) : (
-                                <div className="text-sm text-gray-500 italic">No notes yet</div>
                               )}
 
-                              <div className="mt-3 text-xs text-gray-400">
-                                Created: {formatTimestamp(item.created_at || '')} |
-                                Last Updated: {formatTimestamp(item.updated_at || '')}
+                              {/* Notes Section */}
+                              <div>
+                                <h4 className="text-sm font-medium text-gray-900 mb-2 flex items-center">
+                                  <MessageSquare className="w-4 h-4 mr-2" />
+                                  Notes ({itemNotesCache[item.id]?.length || 0})
+                                </h4>
+
+                                {itemNotesCache[item.id]?.length > 0 ? (
+                                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                                    {itemNotesCache[item.id].slice(0, 3).map((note) => (
+                                      <div key={note.id} className="bg-white p-3 rounded border border-gray-200">
+                                        <div className="text-sm text-gray-800 mb-1">{note.note}</div>
+                                        <div className="text-xs text-gray-500 flex items-center justify-between">
+                                          <span>{note.created_by}</span>
+                                          <span>{new Date(note.created_at).toLocaleDateString()}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+                                    {itemNotesCache[item.id].length > 3 && (
+                                      <button
+                                        onClick={() => showNotes(item)}
+                                        className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                                      >
+                                        View all {itemNotesCache[item.id].length} notes →
+                                      </button>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-sm text-gray-500 italic">No notes yet</div>
+                                )}
+                              </div>
+
+                              {/* Metadata */}
+                              <div className="text-xs text-gray-400 pt-2 border-t border-gray-200">
+                                Created: {formatTimestamp(item.created_at || '')} | 
+                                Updated: {formatTimestamp(item.updated_at || '')}
                               </div>
                             </div>
                           </td>

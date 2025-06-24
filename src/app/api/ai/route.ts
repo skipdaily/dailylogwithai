@@ -1,283 +1,164 @@
 import { NextRequest, NextResponse } from 'next/server';
-import OpenAI from 'openai';
 import { supabase } from '@/lib/supabaseClient';
+import OpenAI from 'openai';
 
-// Create OpenAI client with robust error handling
-const createOpenAIClient = () => {
-  if (!process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY === 'dummy-key') {
-    console.error('OPENAI_API_KEY is not properly configured in environment variables');
-  }
-
-  try {
-    return new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-      dangerouslyAllowBrowser: false
-    });
-  } catch (error) {
-    console.error('Error initializing OpenAI client:', error);
-    // Return a dummy client that will fail gracefully when used
-    return {
-      chat: {
-        completions: {
-          create: async () => {
-            throw new Error('OpenAI API key not properly configured');
-          }
-        }
-      }
-    } as unknown as OpenAI;
-  }
-};
-
-const openai = createOpenAIClient();
-
+// Data fetching functions
 async function fetchConstructionData() {
   try {
-    // Fetch all relevant data from your Supabase tables including action items
-    const [
-      { data: projects },
-      { data: dailyLogs },
-      { data: crews },
-      { data: crewMembers },
-      { data: subcontractors },
-      { data: logSections },
-      { data: logCrews },
-      { data: logSubcontractors },
-      { data: actionItems },
-      { data: actionItemNotes }
-    ] = await Promise.all([
-      supabase.from('projects').select('*'),
-      supabase.from('daily_logs').select('*'),
-      supabase.from('crews').select('*'),
-      supabase.from('crew_members').select('*'),
-      supabase.from('subcontractors').select('*'),
-      supabase.from('log_sections').select('*'),
-      supabase.from('log_crews').select('*'),
-      supabase.from('log_subcontractors').select('*'),
-      supabase.from('action_items').select('*').order('created_at', { ascending: false }),
-      supabase.from('action_item_notes').select('*').order('created_at', { ascending: false })
-    ]);
-
-    // Fetch recent logs with related data
-    const { data: recentLogsWithDetails } = await supabase
+    // Fetch recent daily logs for context
+    const { data: dailyLogs, error: logsError } = await supabase
       .from('daily_logs')
       .select(`
         id,
         date,
+        weather_conditions,
+        temperature_high,
+        temperature_low,
+        crew_count,
+        work_accomplished,
+        materials_delivered,
+        equipment_used,
+        safety_notes,
+        challenges_delays,
         superintendent_name,
-        projects(name, location),
-        log_sections(section_type, content),
-        log_crews(crews(name)),
-        log_subcontractors(subcontractors(name))
+        created_at,
+        updated_at,
+        projects(name)
       `)
       .order('date', { ascending: false })
       .limit(10);
 
-    // Fetch action items with related project and log info, including ALL notes with proper column names
-    const { data: actionItemsWithDetails } = await supabase
-      .from('action_items')
-      .select(`
-        *,
-        projects(name, location),
-        daily_logs(date, superintendent_name),
-        action_item_notes(id, note, created_by, created_at)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(50); // Increased to get more comprehensive data
+    if (logsError) {
+      console.error('Error fetching daily logs:', logsError);
+    }
 
-    // Also fetch a comprehensive view of action items with their complete history
-    const { data: actionItemsHistory } = await supabase
+    // Fetch recent action items for context
+    const { data: actionItems, error: actionError } = await supabase
       .from('action_items')
       .select(`
         id,
         title,
         description,
-        status,
-        priority,
-        due_date,
+        source_type,
+        project_id,
         assigned_to,
+        priority,
+        status,
+        due_date,
+        created_by,
         created_at,
         updated_at,
-        completed_at,
-        projects(name, location),
-        action_item_notes(id, note, created_by, created_at)
+        projects(name)
       `)
-      .order('updated_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (actionError) {
+      console.error('Error fetching action items:', actionError);
+    }
+
+    // Fetch recent action item notes for context
+    const { data: actionItemNotes, error: notesError } = await supabase
+      .from('action_item_notes')
+      .select(`
+        id,
+        action_item_id,
+        note,
+        created_by,
+        created_at,
+        action_items(
+          title,
+          status,
+          priority,
+          assigned_to,
+          projects(name)
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (notesError) {
+      console.error('Error fetching action item notes:', notesError);
+    }
+
+    // Fetch projects for context
+    const { data: projects, error: projectsError } = await supabase
+      .from('projects')
+      .select('id, name, description, status, start_date, target_completion')
+      .order('created_at', { ascending: false });
+
+    if (projectsError) {
+      console.error('Error fetching projects:', projectsError);
+    }
+
+    // Fetch crew members for context
+    const { data: crewMembers, error: crewError } = await supabase
+      .from('crew_members')
+      .select('id, name, role, email, phone, hourly_rate, notes')
+      .order('name');
+
+    if (crewError) {
+      console.error('Error fetching crew members:', crewError);
+    }
+
+    // Fetch subcontractors for context
+    const { data: subcontractors, error: subcontractorsError } = await supabase
+      .from('subcontractors')
+      .select(`
+        id, name, specialty, contact_person, email, contact_email, 
+        phone, contact_phone, address, license_number, insurance_info, 
+        notes, is_active
+      `)
+      .order('name');
+
+    if (subcontractorsError) {
+      console.error('Error fetching subcontractors:', subcontractorsError);
+    }
 
     return {
-      projects: projects || [],
       dailyLogs: dailyLogs || [],
-      crews: crews || [],
-      crewMembers: crewMembers || [],
-      subcontractors: subcontractors || [],
-      logSections: logSections || [],
-      logCrews: logCrews || [],
-      logSubcontractors: logSubcontractors || [],
       actionItems: actionItems || [],
       actionItemNotes: actionItemNotes || [],
-      recentLogsWithDetails: recentLogsWithDetails || [],
-      actionItemsWithDetails: actionItemsWithDetails || [],
-      actionItemsHistory: actionItemsHistory || []
+      projects: projects || [],
+      crewMembers: crewMembers || [],
+      subcontractors: subcontractors || [],
+      error: null
     };
   } catch (error) {
     console.error('Error fetching construction data:', error);
     return {
-      projects: [],
       dailyLogs: [],
-      crews: [],
-      crewMembers: [],
-      subcontractors: [],
-      logSections: [],
-      logCrews: [],
-      logSubcontractors: [],
       actionItems: [],
       actionItemNotes: [],
-      recentLogsWithDetails: [],
-      actionItemsWithDetails: [],
-      actionItemsHistory: [],
-      error: 'Unable to fetch data from database'
+      projects: [],
+      crewMembers: [],
+      subcontractors: [],
+      error: 'Failed to fetch some data'
     };
   }
 }
 
 function createDataContext(data: any) {
-  const stats = {
-    totalProjects: data.projects.length,
-    totalLogs: data.dailyLogs.length,
-    totalCrews: data.crews.length,
-    totalCrewMembers: data.crewMembers.length,
-    totalSubcontractors: data.subcontractors.length,
-    recentLogsCount: data.recentLogsWithDetails.length,
-    totalActionItems: data.actionItems.length,
-    openActionItems: data.actionItems.filter((item: any) => item.status === 'open').length,
-    inProgressActionItems: data.actionItems.filter((item: any) => item.status === 'in_progress').length,
-    completedActionItems: data.actionItems.filter((item: any) => item.status === 'completed').length,
-    urgentActionItems: data.actionItems.filter((item: any) => item.priority === 'urgent').length,
-    overdueActionItems: data.actionItems.filter((item: any) =>
-      item.due_date && new Date(item.due_date) < new Date() && item.status !== 'completed'
-    ).length
-  };
+  let context = '';
 
-  let context = `CONSTRUCTION PROJECT DATA SUMMARY:
-
-STATISTICS:
-- Total Projects: ${stats.totalProjects}
-- Total Daily Logs: ${stats.totalLogs}
-- Total Crews: ${stats.totalCrews}
-- Total Crew Members: ${stats.totalCrewMembers}
-- Total Subcontractors: ${stats.totalSubcontractors}
-- Recent Logs Available: ${stats.recentLogsCount}
-
-ACTION ITEMS SUMMARY:
-- Total Action Items: ${stats.totalActionItems}
-- Open: ${stats.openActionItems}
-- In Progress: ${stats.inProgressActionItems}
-- Completed: ${stats.completedActionItems}
-- Urgent Priority: ${stats.urgentActionItems}
-- Overdue: ${stats.overdueActionItems}
-
-`;
-
-  // Add projects information
-  if (data.projects.length > 0) {
-    context += `ACTIVE PROJECTS:\n`;
-    data.projects.forEach((project: any) => {
-      context += `- ${project.name}${project.location ? ` (${project.location})` : ''}\n`;
-    });
-    context += '\n';
-  }
-
-  // Add recent logs with details
-  if (data.recentLogsWithDetails.length > 0) {
-    context += `RECENT DAILY LOGS:\n`;
-    data.recentLogsWithDetails.forEach((log: any) => {
-      context += `
-Date: ${log.date}
-Project: ${log.projects?.name || 'No Project'}
-Superintendent: ${log.superintendent_name}
-`;
-
-      if (log.log_sections?.length > 0) {
-        context += `Sections:\n`;
-        log.log_sections.forEach((section: any) => {
-          if (section.content?.trim()) {
-            context += `  - ${section.section_type}: ${section.content.substring(0, 100)}${section.content.length > 100 ? '...' : ''}\n`;
-          }
-        });
+  // Enhanced action items analysis with complete note history
+  if (data.actionItems.length > 0) {
+    // Create a map of action item IDs to their notes
+    const notesByActionItem = data.actionItemNotes.reduce((acc: any, note: any) => {
+      if (!acc[note.action_item_id]) {
+        acc[note.action_item_id] = [];
       }
+      acc[note.action_item_id].push(note);
+      return acc;
+    }, {});
 
-      if (log.log_crews?.length > 0) {
-        const crewNames = log.log_crews.map((lc: any) => lc.crews?.name).filter(Boolean);
-        if (crewNames.length > 0) {
-          context += `Crews: ${crewNames.join(', ')}\n`;
-        }
-      }
-
-      if (log.log_subcontractors?.length > 0) {
-        const subNames = log.log_subcontractors.map((ls: any) => ls.subcontractors?.name).filter(Boolean);
-        if (subNames.length > 0) {
-          context += `Subcontractors: ${subNames.join(', ')}\n`;
-        }
-      }
-      context += '\n';
-    });
-  }
-
-  // Add crews and crew members lists
-  if (data.crews.length > 0) {
-    context += `AVAILABLE CREWS: ${data.crews.map((c: any) => c.name).join(', ')}\n\n`;
-  }
-
-  // Add detailed crew members information
-  if (data.crewMembers.length > 0) {
-    context += `CREW MEMBERS:\n`;
-    data.crewMembers.forEach((member: any) => {
-      context += `- ${member.name}`;
-      if (member.role) context += ` (${member.role})`;
-      if (member.hourly_rate) context += ` - $${member.hourly_rate}/hr`;
-      if (member.phone) context += ` - Phone: ${member.phone}`;
-      if (member.email) context += ` - Email: ${member.email}`;
-      if (member.notes) context += ` - Notes: ${member.notes}`;
-      context += `\n`;
-    });
-    context += `\n`;
-  }
-
-  if (data.subcontractors.length > 0) {
-    context += `SUBCONTRACTORS:\n`;
-    data.subcontractors.forEach((subcontractor: any) => {
-      context += `- ${subcontractor.name}`;
-      if (subcontractor.specialty) context += ` (${subcontractor.specialty})`;
-      if (subcontractor.contact_person) context += ` - Contact: ${subcontractor.contact_person}`;
-      if (subcontractor.email || subcontractor.contact_email) {
-        const email = subcontractor.email || subcontractor.contact_email;
-        context += ` - Email: ${email}`;
-      }
-      if (subcontractor.phone || subcontractor.contact_phone) {
-        const phone = subcontractor.phone || subcontractor.contact_phone;
-        context += ` - Phone: ${phone}`;
-      }
-      if (subcontractor.address) context += ` - Address: ${subcontractor.address}`;
-      if (subcontractor.license_number) context += ` - License: ${subcontractor.license_number}`;
-      if (subcontractor.insurance_info) context += ` - Insurance: ${subcontractor.insurance_info}`;
-      if (subcontractor.notes) context += ` - Notes: ${subcontractor.notes}`;
-      if (subcontractor.is_active === false) context += ` - ⚠️ INACTIVE`;
-      context += `\n`;
-    });
-    context += `\n`;
-  }
-
-  // Add action items information with comprehensive timeline analysis
-  if (data.actionItemsWithDetails.length > 0) {
-    context += `CURRENT ACTION ITEMS WITH COMPLETE HISTORY:\n`;
-
-    // Create a comprehensive analysis of action items with their full timeline
-    const enrichedItems = data.actionItemsWithDetails.map((item: any) => {
-      // Sort notes chronologically to understand progression
-      const sortedNotes = (item.action_item_notes || []).sort((a: any, b: any) =>
+    // Enrich action items with timeline data and sorted notes
+    const enrichedItems = data.actionItems.map((item: any) => {
+      const itemNotes = notesByActionItem[item.id] || [];
+      const sortedNotes = itemNotes.sort((a: any, b: any) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
 
-      // Analyze the timeline and current status
       const timeline = {
         created: item.created_at,
         lastUpdated: item.updated_at,
@@ -704,8 +585,6 @@ async function updateActionItemDueDate(id: string, dueDate: string, user?: strin
   await addActionItemNote(id, `Due date updated to ${formattedDate}`, user || 'AI Assistant');
   return { success: true, data, message: `Action item due date updated to ${formattedDate}` };
 }
-
-// ...existing fetchConstructionData function...
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
