@@ -1259,89 +1259,405 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
     const formatDate = (dateString: string) => {
       const date = new Date(dateString);
       return date.toLocaleDateString('en-US', { 
-        year: '2-digit', 
-        month: 'numeric', 
+        year: 'numeric', 
+        month: 'long', 
         day: 'numeric' 
       });
     };
 
     return (
-      <div ref={ref} className="hidden print:block">
-        <div className="max-w-4xl mx-auto p-8 bg-white">
-          <div className="text-center mb-8">
-            <h1 className="text-2xl font-bold mb-4">DAILY LOG</h1>
-            <div className="text-left">
-              <p>
-                <strong>Daily Log Date:</strong> {formatDate(logData.date)} 
-                <strong> Prepared By:</strong> {logData.superintendentName} 
-                <strong> Project / Worksite:</strong> {logData.projectName}
-              </p>
+      <div ref={ref} className="print:block hidden">
+        <style jsx global>{`
+          @media print {
+            @page {
+              margin: 0.75in;
+              size: letter;
+            }
+            
+            body {
+              -webkit-print-color-adjust: exact;
+              color-adjust: exact;
+            }
+            
+            .no-print, .no-print * {
+              display: none !important;
+            }
+            
+            .print\\:block {
+              display: block !important;
+            }
+            
+            .print\\:hidden {
+              display: none !important;
+            }
+            
+            .print\\:text-black {
+              color: black !important;
+            }
+            
+            .print\\:bg-white {
+              background-color: white !important;
+            }
+            
+            .print\\:border-black {
+              border-color: black !important;
+            }
+            
+            .print\\:list-disc {
+              list-style-type: disc !important;
+            }
+            
+            .print\\:list-inside {
+              list-style-position: inside !important;
+            }
+            
+            .print\\:space-y-1 > * + * {
+              margin-top: 0.25rem !important;
+            }
+            
+            .print\\:space-y-2 > * + * {
+              margin-top: 0.5rem !important;
+            }
+            
+            .print\\:space-y-3 > * + * {
+              margin-top: 0.75rem !important;
+            }
+            
+            .print\\:space-y-6 > * + * {
+              margin-top: 1.5rem !important;
+            }
+            
+            .print\\:mb-2 {
+              margin-bottom: 0.5rem !important;
+            }
+            
+            .print\\:mb-3 {
+              margin-bottom: 0.75rem !important;
+            }
+            
+            .print\\:mb-6 {
+              margin-bottom: 1.5rem !important;
+            }
+            
+            .print\\:mb-8 {
+              margin-bottom: 2rem !important;
+            }
+            
+            .print\\:mt-8 {
+              margin-top: 2rem !important;
+            }
+            
+            .print\\:p-4 {
+              padding: 1rem !important;
+            }
+            
+            .print\\:p-8 {
+              padding: 2rem !important;
+            }
+            
+            .print\\:pb-1 {
+              padding-bottom: 0.25rem !important;
+            }
+            
+            .print\\:pt-4 {
+              padding-top: 1rem !important;
+            }
+            
+            .print\\:pl-4 {
+              padding-left: 1rem !important;
+            }
+            
+            .print\\:font-bold {
+              font-weight: 700 !important;
+            }
+            
+            .print\\:font-semibold {
+              font-weight: 600 !important;
+            }
+            
+            .print\\:text-lg {
+              font-size: 1.125rem !important;
+              line-height: 1.75rem !important;
+            }
+            
+            .print\\:text-3xl {
+              font-size: 1.875rem !important;
+              line-height: 2.25rem !important;
+            }
+            
+            .print\\:text-sm {
+              font-size: 0.875rem !important;
+              line-height: 1.25rem !important;
+            }
+            
+            .print\\:text-center {
+              text-align: center !important;
+            }
+            
+            .print\\:text-left {
+              text-align: left !important;
+            }
+            
+            .print\\:leading-relaxed {
+              line-height: 1.625 !important;
+            }
+            
+            .print\\:border {
+              border-width: 1px !important;
+            }
+            
+            .print\\:border-b {
+              border-bottom-width: 1px !important;
+            }
+            
+            .print\\:border-t {
+              border-top-width: 1px !important;
+            }
+            
+            .print\\:border-l-2 {
+              border-left-width: 2px !important;
+            }
+            
+            .print\\:grid {
+              display: grid !important;
+            }
+            
+            .print\\:grid-cols-2 {
+              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+            }
+            
+            .print\\:grid-cols-3 {
+              grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+            }
+            
+            .print\\:gap-4 {
+              gap: 1rem !important;
+            }
+            
+            .print\\:gap-8 {
+              gap: 2rem !important;
+            }
+            
+            .print\\:ml-4 {
+              margin-left: 1rem !important;
+            }
+            
+            .print\\:italic {
+              font-style: italic !important;
+            }
+            
+            .print\\:whitespace-pre-wrap {
+              white-space: pre-wrap !important;
+            }
+            
+            .print\\:w-full {
+              width: 100% !important;
+            }
+            
+            .print\\:h-full {
+              height: 100% !important;
+            }
+            
+            .print\\:fixed {
+              position: fixed !important;
+            }
+            
+            .print\\:inset-0 {
+              top: 0 !important;
+              right: 0 !important;
+              bottom: 0 !important;
+              left: 0 !important;
+            }
+            
+            .print\\:z-50 {
+              z-index: 50 !important;
+            }
+          }
+        `}</style>
+        
+        <div className="print:block print:w-full print:h-full print:p-8 print:bg-white print:text-black">
+          {/* Header */}
+          <div className="print:text-center print:mb-8">
+            <h1 className="print:text-3xl print:font-bold print:mb-6 print:text-black">DAILY CONSTRUCTION LOG</h1>
+            <div className="print:grid print:grid-cols-3 print:gap-4 print:text-left print:border print:border-black print:p-4">
+              <div>
+                <strong className="print:text-black">Date:</strong> {formatDate(logData.date)}
+              </div>
+              <div>
+                <strong className="print:text-black">Superintendent:</strong> {logData.superintendentName}
+              </div>
+              <div>
+                <strong className="print:text-black">Project:</strong> {logData.projectName}
+              </div>
             </div>
           </div>
 
-          <div className="space-y-6">
-            <div>
-              <h3 className="font-bold mb-2">1. Work Performed (All Trades)</h3>
-              <ul className="list-disc list-inside space-y-1">
-                {logData.workItems.filter(item => item.text.trim()).map(item => (
-                  <li key={item.id}>{item.text}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-bold mb-2">2. Delays / Disruptions</h3>
-              <ul className="list-disc list-inside space-y-1">
-                {logData.delays.filter(item => item.text.trim()).map(item => (
-                  <li key={item.id}>{item.text}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-bold mb-2">3. Trades Onsite</h3>
-              <ul className="list-disc list-inside space-y-1">
-                {logData.tradesOnsite.filter(item => item.text.trim()).map(item => (
-                  <li key={item.id}>{item.text}</li>
-                ))}
-              </ul>
-            </div>
-
-            <div>
-              <h3 className="font-bold mb-2">4. Meetings / Discussions</h3>
-              <div className="space-y-2">
-                {logData.meetings.filter(item => item.text.trim()).map(item => (
-                  <div key={item.id} className="whitespace-pre-wrap">{item.text}</div>
-                ))}
+          {/* Content Sections */}
+          <div className="print:space-y-6">
+            {/* Subcontractors and Crews */}
+            <div className="print:grid print:grid-cols-2 print:gap-8 print:mb-6">
+              <div>
+                <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                  Subcontractors on Site
+                </h3>
+                {logData.subcontractors.length > 0 ? (
+                  <ul className="print:list-disc print:list-inside print:space-y-1">
+                    {logData.subcontractors.map(sub => (
+                      <li key={sub.id} className="print:text-black">{sub.name}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="print:text-black print:italic">No subcontractors on site</p>
+                )}
+              </div>
+              
+              <div>
+                <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                  Crews on Site
+                </h3>
+                {logData.crews.length > 0 ? (
+                  <div className="print:space-y-2">
+                    {logData.crews.map(crew => (
+                      <div key={crew.id}>
+                        <div className="print:font-semibold print:text-black">{crew.name}</div>
+                        {crew.members.length > 0 && (
+                          <ul className="print:list-disc print:list-inside print:ml-4 print:space-y-1">
+                            {crew.members.map(member => (
+                              <li key={member.id} className="print:text-black print:text-sm">{member.name}</li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="print:text-black print:italic">No crews on site</p>
+                )}
               </div>
             </div>
 
-            <div>
-              <h3 className="font-bold mb-2">5. Out-of-Scope / Extra Work Identified</h3>
-              <ul className="list-disc list-inside space-y-1">
-                {logData.outOfScope.filter(item => item.text.trim()).map(item => (
-                  <li key={item.id}>{item.text}</li>
-                ))}
-              </ul>
+            {/* Work Items */}
+            <div className="print:mb-6">
+              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                1. Work Performed (All Trades)
+              </h3>
+              {logData.workItems.filter(item => item.text.trim()).length > 0 ? (
+                <ul className="print:list-disc print:list-inside print:space-y-2">
+                  {logData.workItems.filter(item => item.text.trim()).map(item => (
+                    <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="print:text-black print:italic">No work items recorded</p>
+              )}
             </div>
 
-            <div>
-              <h3 className="font-bold mb-2">6. Plan for Next Day (All Trades)</h3>
-              <ul className="list-disc list-inside space-y-1">
-                {logData.nextDayPlan.filter(item => item.text.trim()).map(item => (
-                  <li key={item.id}>{item.text}</li>
-                ))}
-              </ul>
+            {/* Delays */}
+            <div className="print:mb-6">
+              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                2. Delays / Disruptions
+              </h3>
+              {logData.delays.filter(item => item.text.trim()).length > 0 ? (
+                <ul className="print:list-disc print:list-inside print:space-y-2">
+                  {logData.delays.filter(item => item.text.trim()).map(item => (
+                    <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="print:text-black print:italic">No delays or disruptions</p>
+              )}
             </div>
 
-            <div>
-              <h3 className="font-bold mb-2">7. Notes / Observations</h3>
-              <div className="space-y-2">
-                {logData.notes.filter(item => item.text.trim()).map(item => (
-                  <div key={item.id} className="whitespace-pre-wrap">{item.text}</div>
-                ))}
-              </div>
+            {/* Trades Onsite */}
+            <div className="print:mb-6">
+              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                3. Trades Onsite
+              </h3>
+              {logData.tradesOnsite.filter(item => item.text.trim()).length > 0 ? (
+                <ul className="print:list-disc print:list-inside print:space-y-2">
+                  {logData.tradesOnsite.filter(item => item.text.trim()).map(item => (
+                    <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="print:text-black print:italic">No trades recorded</p>
+              )}
             </div>
+
+            {/* Meetings */}
+            <div className="print:mb-6">
+              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                4. Meetings / Discussions
+              </h3>
+              {logData.meetings.filter(item => item.text.trim()).length > 0 ? (
+                <div className="print:space-y-3">
+                  {logData.meetings.filter(item => item.text.trim()).map(item => (
+                    <div key={item.id} className="print:text-black print:leading-relaxed print:whitespace-pre-wrap print:border-l-2 print:border-gray-300 print:pl-4">
+                      {item.text}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="print:text-black print:italic">No meetings or discussions</p>
+              )}
+            </div>
+
+            {/* Out of Scope */}
+            <div className="print:mb-6">
+              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                5. Out-of-Scope / Extra Work Identified
+              </h3>
+              {logData.outOfScope.filter(item => item.text.trim()).length > 0 ? (
+                <ul className="print:list-disc print:list-inside print:space-y-2">
+                  {logData.outOfScope.filter(item => item.text.trim()).map(item => (
+                    <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="print:text-black print:italic">No out-of-scope work identified</p>
+              )}
+            </div>
+
+            {/* Next Day Plan */}
+            <div className="print:mb-6">
+              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                6. Plan for Next Day (All Trades)
+              </h3>
+              {logData.nextDayPlan.filter(item => item.text.trim()).length > 0 ? (
+                <ul className="print:list-disc print:list-inside print:space-y-2">
+                  {logData.nextDayPlan.filter(item => item.text.trim()).map(item => (
+                    <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="print:text-black print:italic">No plans recorded for next day</p>
+              )}
+            </div>
+
+            {/* Notes */}
+            <div className="print:mb-6">
+              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                7. Notes / Observations
+              </h3>
+              {logData.notes.filter(item => item.text.trim()).length > 0 ? (
+                <div className="print:space-y-3">
+                  {logData.notes.filter(item => item.text.trim()).map(item => (
+                    <div key={item.id} className="print:text-black print:leading-relaxed print:whitespace-pre-wrap print:border-l-2 print:border-gray-300 print:pl-4">
+                      {item.text}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="print:text-black print:italic">No notes or observations</p>
+              )}
+            </div>
+          </div>
+          
+          {/* Footer */}
+          <div className="print:mt-8 print:pt-4 print:border-t print:border-black print:text-sm print:text-center">
+            <p className="print:text-black">
+              Daily Log generated on {new Date().toLocaleDateString()} at {new Date().toLocaleTimeString()}
+            </p>
           </div>
         </div>
       </div>
@@ -1573,17 +1889,49 @@ const ConstructionDailyLog = () => {
     }
   };
 
-  const handleExportToPDF = () => {
-    if (!printRef.current) return;
-    
-    const originalContent = document.body.innerHTML;
-    document.body.innerHTML = printRef.current.innerHTML;
-    document.title = `Daily Log - ${logData.projectName} - ${logData.date}`;
-    
-    window.print();
-    
-    document.body.innerHTML = originalContent;
-    window.location.reload();
+  const handleExportToPDF = async () => {
+    try {
+      // Show loading state
+      setSaving(true);
+      setError('');
+      
+      // Prepare the data to send to the API
+      const response = await fetch('/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(logData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      // Get the PDF blob
+      const blob = await response.blob();
+      
+      // Create download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `Daily_Log_${(logData.projectName || 'Unknown').replace(/[^a-zA-Z0-9]/g, '_')}_${logData.date}.pdf`;
+      
+      // Trigger download
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      // Clean up
+      window.URL.revokeObjectURL(url);
+      
+      setSuccess('PDF generated successfully!');
+    } catch (error: any) {
+      console.error('Error generating PDF:', error);
+      setError(error.message || 'Failed to generate PDF');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const createActionItem = async (sectionType: string, title: string, details?: {
@@ -1644,7 +1992,7 @@ const ConstructionDailyLog = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4">
+    <div className="min-h-screen bg-gray-50 p-4 no-print">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
@@ -1672,11 +2020,12 @@ const ConstructionDailyLog = () => {
               </button>
               <button
                 onClick={handleExportToPDF}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 type="button"
               >
                 <Download className="h-4 w-4" />
-                Export PDF
+                {saving ? 'Generating PDF...' : 'Export PDF'}
               </button>
             </div>
           </div>

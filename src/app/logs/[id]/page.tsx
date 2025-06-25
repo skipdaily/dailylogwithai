@@ -48,6 +48,7 @@ export default function ViewLogPage() {
   const [logData, setLogData] = useState<LogData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   useEffect(() => {
     if (logId) {
@@ -104,7 +105,7 @@ export default function ViewLogPage() {
         return;
       }
 
-      setLogData(data);
+      setLogData(data as any);
     } catch (error: any) {
       console.error('Error fetching log data:', error);
       setError(error.message || 'Failed to load log data');
@@ -120,8 +121,93 @@ export default function ViewLogPage() {
       .sort((a, b) => a.order_num - b.order_num);
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!logData) return;
+    
+    try {
+      setIsGeneratingPdf(true);
+
+      // Transform the database data structure to match what the PDF API expects
+      const transformedData = {
+        id: logData.id,
+        date: logData.date,
+        superintendentName: logData.superintendent_name,
+        projectName: (Array.isArray(logData.projects) ? logData.projects[0]?.name : logData.projects?.name) || 'No Project',
+        projectId: (Array.isArray(logData.projects) ? logData.projects[0]?.id : logData.projects?.id) || null,
+        // Transform sections into arrays by type
+        workItems: getSectionsByType('work_performed').map(section => ({
+          id: section.id,
+          text: section.content
+        })),
+        delays: getSectionsByType('delays').map(section => ({
+          id: section.id,
+          text: section.content
+        })),
+        tradesOnsite: getSectionsByType('trades_onsite').map(section => ({
+          id: section.id,
+          text: section.content
+        })),
+        meetings: getSectionsByType('meetings').map(section => ({
+          id: section.id,
+          text: section.content
+        })),
+        outOfScope: getSectionsByType('out_of_scope').map(section => ({
+          id: section.id,
+          text: section.content
+        })),
+        nextDayPlan: getSectionsByType('next_day_plan').map(section => ({
+          id: section.id,
+          text: section.content
+        })),
+        notes: getSectionsByType('notes').map(section => ({
+          id: section.id,
+          text: section.content
+        })),
+        // Transform crews and subcontractors
+        crews: logData.log_crews.map(item => ({
+          id: item.crews.id,
+          name: item.crews.name,
+          members: item.crews.crew_members.map(member => ({
+            id: member.id,
+            name: member.name
+          }))
+        })),
+        subcontractors: logData.log_subcontractors.map(item => ({
+          id: item.subcontractors.id,
+          name: item.subcontractors.name
+        }))
+      };
+
+      const response = await fetch('/api/generate-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(transformedData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      // Create blob and download
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.style.display = 'none';
+      a.href = url;
+      a.download = `Daily_Log_${(transformedData.projectName || 'Unknown').replace(/[^a-zA-Z0-9]/g, '_')}_${transformedData.date}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+
+    } catch (error) {
+      console.error('Error generating PDF:', error);
+      alert('Failed to generate PDF. Please try again.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -193,10 +279,11 @@ export default function ViewLogPage() {
             </Link>
             <button
               onClick={handlePrint}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+              disabled={isGeneratingPdf}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="h-4 w-4" />
-              Print
+              {isGeneratingPdf ? 'Generating PDF...' : 'Download PDF'}
             </button>
           </div>
         </div>
