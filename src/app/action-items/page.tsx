@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, Suspense } from 'react';
-import { Plus, Search, Edit2, Trash2, AlertCircle, CheckCircle, Clock, AlertTriangle, FileText, MessageSquare } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, AlertCircle, CheckCircle, Clock, AlertTriangle, FileText, MessageSquare, Printer } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -494,6 +494,69 @@ function ActionItemsContent() {
     }
   };
 
+  const handlePrintPDF = async () => {
+    try {
+      setError('');
+      
+      // Get the project name for the selected filter
+      const selectedProject = projects.find(p => p.id === filterProject);
+      
+      // Prepare the data to send to the PDF API
+      const pdfData = {
+        actionItems: filteredItems,
+        filters: {
+          searchTerm,
+          filterStatus,
+          filterPriority,
+          filterProject,
+          projectName: selectedProject?.name
+        }
+      };
+
+      // Call the PDF generation API
+      const response = await fetch('/api/generate-action-items-pdf', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(pdfData),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate PDF');
+      }
+
+      // Create a blob from the response
+      const blob = await response.blob();
+      
+      // Create a download link
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Get filename from response headers if available, otherwise use default
+      const contentDisposition = response.headers.get('content-disposition');
+      let filename = 'Action_Items_Report.pdf';
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/);
+        if (filenameMatch) {
+          filename = filenameMatch[1];
+        }
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      setSuccess('PDF generated successfully!');
+    } catch (error: any) {
+      console.error('Error generating PDF:', error);
+      setError(error.message || 'Failed to generate PDF');
+    }
+  };
+
   const filteredItems = actionItems.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.description && item.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
@@ -545,13 +608,22 @@ function ActionItemsContent() {
                 <span>{filteredItems.length} Total</span>
               </div>
             </div>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
-            >
-              <Plus className="w-4 h-4" />
-              Add Item
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handlePrintPDF}
+                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 whitespace-nowrap"
+              >
+                <Printer className="w-4 h-4" />
+                Print PDF
+              </button>
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 whitespace-nowrap"
+              >
+                <Plus className="w-4 h-4" />
+                Add Item
+              </button>
+            </div>
           </div>
         </div>
 

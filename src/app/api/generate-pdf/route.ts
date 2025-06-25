@@ -83,13 +83,13 @@ export async function POST(request: NextRequest) {
 
     // Header
     doc.setFontSize(20);
-    doc.setFont('helvetica', 'bold');
-    currentY = addText('DAILY CONSTRUCTION LOG', pageWidth / 2, currentY, pageWidth - 2 * margin, { align: 'center' });
+    doc.setFont('helvetica', 'normal');
+    currentY = addText('DAILY LOG', pageWidth / 2, currentY, pageWidth - 2 * margin, { align: 'center' });
     currentY += 5;
 
     // Project Information Box
     doc.setFontSize(12);
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('helvetica', 'normal');
     currentY += 5;
     
     // Three columns for project info
@@ -99,12 +99,12 @@ export async function POST(request: NextRequest) {
     doc.setFont('helvetica', 'normal');
     doc.text(formatDate(logData.date), margin + 5, currentY + 6);
     
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('helvetica', 'normal');
     doc.text('Superintendent:', margin + colWidth + 5, currentY);
     doc.setFont('helvetica', 'normal');
     doc.text(logData.superintendentName || 'Not specified', margin + colWidth + 5, currentY + 6);
     
-    doc.setFont('helvetica', 'bold');
+    doc.setFont('helvetica', 'normal');
     doc.text('Project:', margin + 2 * colWidth + 5, currentY);
     doc.setFont('helvetica', 'normal');
     doc.text(logData.projectName || 'Not specified', margin + 2 * colWidth + 5, currentY + 6);
@@ -117,7 +117,7 @@ export async function POST(request: NextRequest) {
       
       // Section title
       doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont('helvetica', 'normal');
       currentY = addText(title, margin, currentY, pageWidth - 2 * margin);
       
       currentY += 5;
@@ -168,7 +168,7 @@ export async function POST(request: NextRequest) {
       checkPageBreak(50);
       
       doc.setFontSize(14);
-      doc.setFont('helvetica', 'bold');
+      doc.setFont('helvetica', 'normal');
       currentY = addText('Personnel & Subcontractors', margin, currentY, pageWidth - 2 * margin);
       
       currentY += 10;
@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
       // Crews
       if (logData.crews && logData.crews.length > 0) {
         doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
+        doc.setFont('helvetica', 'normal');
         currentY = addText('Crews:', margin, currentY, pageWidth - 2 * margin);
         currentY += 3;
         
@@ -186,7 +186,7 @@ export async function POST(request: NextRequest) {
         logData.crews.forEach((crew: any) => {
           checkPageBreak(20);
           
-          doc.setFont('helvetica', 'bold');
+          doc.setFont('helvetica', 'normal');
           currentY = addText(`• ${crew.name}`, margin + 5, currentY, pageWidth - 2 * margin - 5);
           doc.setFont('helvetica', 'normal');
           
@@ -204,7 +204,7 @@ export async function POST(request: NextRequest) {
       // Subcontractors
       if (logData.subcontractors && logData.subcontractors.length > 0) {
         doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
+        doc.setFont('helvetica', 'normal');
         currentY = addText('Subcontractors:', margin, currentY, pageWidth - 2 * margin);
         currentY += 3;
         
