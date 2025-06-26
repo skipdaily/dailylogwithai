@@ -5,31 +5,132 @@ import OpenAI from 'openai';
 // Data fetching functions
 async function fetchConstructionData() {
   try {
-    // Fetch recent daily logs for context
+    // Fetch recent daily logs with comprehensive data
     const { data: dailyLogs, error: logsError } = await supabase
       .from('daily_logs')
       .select(`
         id,
         date,
-        weather_conditions,
-        temperature_high,
-        temperature_low,
-        crew_count,
-        work_accomplished,
-        materials_delivered,
-        equipment_used,
-        safety_notes,
-        challenges_delays,
+        project_id,
         superintendent_name,
+        weather,
+        temperature,
         created_at,
         updated_at,
-        projects(name)
+        projects(name, description, status)
       `)
       .order('date', { ascending: false })
-      .limit(10);
+      .limit(20);
 
     if (logsError) {
       console.error('Error fetching daily logs:', logsError);
+    }
+
+    // Fetch log sections (work performed, delays, trades, meetings, etc.)
+    const { data: logSections, error: sectionsError } = await supabase
+      .from('log_sections')
+      .select(`
+        id,
+        log_id,
+        section_type,
+        content,
+        order_num,
+        created_at,
+        updated_at
+      `)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (sectionsError) {
+      console.error('Error fetching log sections:', sectionsError);
+    }
+
+    // Fetch log crew assignments
+    const { data: logCrews, error: logCrewsError } = await supabase
+      .from('log_crews')
+      .select(`
+        id,
+        log_id,
+        crew_id,
+        created_at,
+        crew_members(name, role, email, phone)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (logCrewsError) {
+      console.error('Error fetching log crews:', logCrewsError);
+    }
+
+    // Fetch log equipment usage
+    const { data: logEquipment, error: logEquipmentError } = await supabase
+      .from('log_equipment')
+      .select(`
+        id,
+        log_id,
+        equipment_id,
+        hours_used,
+        notes,
+        created_at,
+        equipment(name, type, model, status)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (logEquipmentError) {
+      console.error('Error fetching log equipment:', logEquipmentError);
+    }
+
+    // Fetch log photos
+    const { data: logPhotos, error: logPhotosError } = await supabase
+      .from('log_photos')
+      .select(`
+        id,
+        log_id,
+        photo_url,
+        caption,
+        created_at
+      `)
+      .order('created_at', { ascending: false })
+      .limit(50);
+
+    if (logPhotosError) {
+      console.error('Error fetching log photos:', logPhotosError);
+    }
+
+    // Fetch log subcontractor participation
+    const { data: logSubcontractors, error: logSubcontractorsError } = await supabase
+      .from('log_subcontractors')
+      .select(`
+        id,
+        log_id,
+        subcontractor_id,
+        created_at,
+        subcontractors(name, specialty, contact_person, contact_email, contact_phone)
+      `)
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (logSubcontractorsError) {
+      console.error('Error fetching log subcontractors:', logSubcontractorsError);
+    }
+
+    // Fetch equipment master list for reference
+    const { data: equipment, error: equipmentError } = await supabase
+      .from('equipment')
+      .select(`
+        id,
+        name,
+        type,
+        model,
+        status,
+        created_at,
+        updated_at
+      `)
+      .order('name');
+
+    if (equipmentError) {
+      console.error('Error fetching equipment:', equipmentError);
     }
 
     // Fetch recent action items for context
@@ -48,6 +149,7 @@ async function fetchConstructionData() {
         created_by,
         created_at,
         updated_at,
+        completed_at,
         projects(name)
       `)
       .order('created_at', { ascending: false })
@@ -105,9 +207,9 @@ async function fetchConstructionData() {
     const { data: subcontractors, error: subcontractorsError } = await supabase
       .from('subcontractors')
       .select(`
-        id, name, specialty, contact_person, email, contact_email, 
-        phone, contact_phone, address, license_number, insurance_info, 
-        notes, is_active
+        id, name, specialty, contact_person, contact_email, 
+        contact_phone, address, license_number, insurance_info, 
+        notes, is_active, created_at, updated_at
       `)
       .order('name');
 
@@ -117,6 +219,12 @@ async function fetchConstructionData() {
 
     return {
       dailyLogs: dailyLogs || [],
+      logSections: logSections || [],
+      logCrews: logCrews || [],
+      logEquipment: logEquipment || [],
+      logPhotos: logPhotos || [],
+      logSubcontractors: logSubcontractors || [],
+      equipment: equipment || [],
       actionItems: actionItems || [],
       actionItemNotes: actionItemNotes || [],
       projects: projects || [],
@@ -128,6 +236,12 @@ async function fetchConstructionData() {
     console.error('Error fetching construction data:', error);
     return {
       dailyLogs: [],
+      logSections: [],
+      logCrews: [],
+      logEquipment: [],
+      logPhotos: [],
+      logSubcontractors: [],
+      equipment: [],
       actionItems: [],
       actionItemNotes: [],
       projects: [],
@@ -141,7 +255,7 @@ async function fetchConstructionData() {
 function createDataContext(data: any) {
   let context = '';
 
-  // Enhanced action items analysis with complete note history
+  // Enhanced action items analysis with complete note history and subcontractor matching
   if (data.actionItems.length > 0) {
     // Create a map of action item IDs to their notes
     const notesByActionItem = data.actionItemNotes.reduce((acc: any, note: any) => {
@@ -152,12 +266,43 @@ function createDataContext(data: any) {
       return acc;
     }, {});
 
-    // Enrich action items with timeline data and sorted notes
+    // Create subcontractor lookup for matching assigned_to fields
+    const subcontractorLookup = data.subcontractors.reduce((acc: any, sub: any) => {
+      // Match by company name
+      acc[sub.name.toLowerCase()] = sub;
+      // Match by contact person name
+      if (sub.contact_person) {
+        acc[sub.contact_person.toLowerCase()] = sub;
+        // Also match by first name only
+        const firstName = sub.contact_person.split(' ')[0].toLowerCase();
+        acc[firstName] = sub;
+      }
+      return acc;
+    }, {});
+
+    // Enrich action items with timeline data, sorted notes, and subcontractor info
     const enrichedItems = data.actionItems.map((item: any) => {
       const itemNotes = notesByActionItem[item.id] || [];
       const sortedNotes = itemNotes.sort((a: any, b: any) => 
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
+
+      // Try to match assigned_to with subcontractor data
+      let matchedSubcontractor = null;
+      if (item.assigned_to) {
+        const assignedLower = item.assigned_to.toLowerCase();
+        matchedSubcontractor = subcontractorLookup[assignedLower];
+        
+        // If no direct match, try partial matching
+        if (!matchedSubcontractor) {
+          for (const [key, sub] of Object.entries(subcontractorLookup)) {
+            if (assignedLower.includes(key) || key.includes(assignedLower)) {
+              matchedSubcontractor = sub;
+              break;
+            }
+          }
+        }
+      }
 
       const timeline = {
         created: item.created_at,
@@ -170,7 +315,12 @@ function createDataContext(data: any) {
         daysSinceLastUpdate: Math.floor((Date.now() - new Date(item.updated_at).getTime()) / (1000 * 60 * 60 * 24))
       };
 
-      return { ...item, timeline, sortedNotes };
+      return { 
+        ...item, 
+        timeline, 
+        sortedNotes, 
+        matchedSubcontractor 
+      };
     });
 
     // Group by status and analyze
@@ -188,6 +338,18 @@ function createDataContext(data: any) {
         context += `  Project: ${item.projects?.name || 'No Project'}\n`;
         context += `  Due: ${item.due_date} (${Math.floor((Date.now() - new Date(item.due_date).getTime()) / (1000 * 60 * 60 * 24))} days overdue)\n`;
         context += `  Assigned: ${item.assigned_to || 'Unassigned'}\n`;
+        
+        // Add subcontractor contact info if matched
+        if (item.matchedSubcontractor) {
+          const sub = item.matchedSubcontractor;
+          context += `  📧 CONTACT INFO:\n`;
+          context += `    Company: ${sub.name}\n`;
+          context += `    Contact: ${sub.contact_person || 'Not specified'}\n`;
+          context += `    Email: ${sub.contact_email || 'No email'}\n`;
+          context += `    Phone: ${sub.contact_phone || 'No phone'}\n`;
+          context += `    Specialty: ${sub.specialty || 'General'}\n`;
+        }
+        
         context += `  Status: ${item.status}\n`;
         context += `  Created: ${item.timeline.daysSinceCreated} days ago\n`;
         context += `  Last Updated: ${item.timeline.daysSinceLastUpdate} days ago\n`;
@@ -220,6 +382,15 @@ function createDataContext(data: any) {
           context += `  Due: ${item.due_date} (${daysUntilDue > 0 ? `${daysUntilDue} days remaining` : `${Math.abs(daysUntilDue)} days overdue`})\n`;
         }
         context += `  Assigned: ${item.assigned_to || 'Unassigned'}\n`;
+        
+        // Add subcontractor contact info if matched
+        if (item.matchedSubcontractor) {
+          const sub = item.matchedSubcontractor;
+          context += `  📧 CONTACT INFO:\n`;
+          context += `    Company: ${sub.name} | Email: ${sub.contact_email || 'No email'} | Phone: ${sub.contact_phone || 'No phone'}\n`;
+          context += `    Contact Person: ${sub.contact_person || 'Not specified'} | Specialty: ${sub.specialty || 'General'}\n`;
+        }
+        
         context += `  Age: ${item.timeline.daysSinceCreated} days since creation\n`;
         context += `  Last Activity: ${item.timeline.daysSinceLastUpdate} days ago\n`;
 
@@ -255,6 +426,13 @@ function createDataContext(data: any) {
           context += `  Due: ${item.due_date} (${daysUntilDue > 0 ? `${daysUntilDue} days remaining` : `${Math.abs(daysUntilDue)} days overdue`})\n`;
         }
         context += `  Assigned: ${item.assigned_to || 'Unassigned'}\n`;
+        
+        // Add subcontractor contact info if matched
+        if (item.matchedSubcontractor) {
+          const sub = item.matchedSubcontractor;
+          context += `  📧 Contact: ${sub.contact_person || sub.name} | ${sub.contact_email || 'No email'} | ${sub.contact_phone || 'No phone'}\n`;
+        }
+        
         context += `  Last Activity: ${item.timeline.daysSinceLastUpdate} days ago\n`;
 
         if (item.sortedNotes && item.sortedNotes.length > 0) {
@@ -315,6 +493,204 @@ function createDataContext(data: any) {
       context += `  Timestamp: ${noteDate.toLocaleString()}\n`;
       context += `\n`;
     });
+  }
+
+  // COMPREHENSIVE DAILY LOGS ANALYSIS with all related data
+  if (data.dailyLogs && data.dailyLogs.length > 0) {
+    context += `\n📋 DAILY LOGS SUMMARY (${data.dailyLogs.length} recent logs):\n`;
+    
+    // Create maps for related data
+    const sectionsByLogId = (data.logSections || []).reduce((acc: any, section: any) => {
+      if (!acc[section.log_id]) acc[section.log_id] = [];
+      acc[section.log_id].push(section);
+      return acc;
+    }, {});
+
+    const crewsByLogId = (data.logCrews || []).reduce((acc: any, crew: any) => {
+      if (!acc[crew.log_id]) acc[crew.log_id] = [];
+      acc[crew.log_id].push(crew);
+      return acc;
+    }, {});
+
+    const equipmentByLogId = (data.logEquipment || []).reduce((acc: any, equip: any) => {
+      if (!acc[equip.log_id]) acc[equip.log_id] = [];
+      acc[equip.log_id].push(equip);
+      return acc;
+    }, {});
+
+    const photosByLogId = (data.logPhotos || []).reduce((acc: any, photo: any) => {
+      if (!acc[photo.log_id]) acc[photo.log_id] = [];
+      acc[photo.log_id].push(photo);
+      return acc;
+    }, {});
+
+    const subcontractorsByLogId = (data.logSubcontractors || []).reduce((acc: any, sub: any) => {
+      if (!acc[sub.log_id]) acc[sub.log_id] = [];
+      acc[sub.log_id].push(sub);
+      return acc;
+    }, {});
+
+    // Process each daily log with complete context
+    data.dailyLogs.slice(0, 10).forEach((log: any) => {
+      const logDate = new Date(log.date);
+      const daysAgo = Math.floor((Date.now() - logDate.getTime()) / (1000 * 60 * 60 * 24));
+      const timeRef = daysAgo === 0 ? 'Today' : daysAgo === 1 ? 'Yesterday' : `${daysAgo} days ago`;
+
+      context += `\n📅 ${log.date} (${timeRef}) - ${log.projects?.name || 'Unknown Project'}\n`;
+      context += `   Superintendent: ${log.superintendent_name || 'Not specified'}\n`;
+      if (log.weather) context += `   Weather: ${log.weather}\n`;
+      if (log.temperature) context += `   Temperature: ${log.temperature}\n`;
+
+      // Log sections (work performed, delays, meetings, etc.)
+      const sections = sectionsByLogId[log.id] || [];
+      if (sections.length > 0) {
+        context += `   📝 LOG SECTIONS (${sections.length}):\n`;
+        sections.sort((a: any, b: any) => (a.order_num || 0) - (b.order_num || 0)).forEach((section: any) => {
+          context += `     ${section.section_type || 'General'}: ${section.content}\n`;
+        });
+      }
+
+      // Crew assignments
+      const crews = crewsByLogId[log.id] || [];
+      if (crews.length > 0) {
+        context += `   👷 CREW MEMBERS (${crews.length}):\n`;
+        crews.forEach((crew: any) => {
+          if (crew.crew_members) {
+            context += `     ${crew.crew_members.name} (${crew.crew_members.role || 'Worker'})`;
+            if (crew.crew_members.email) context += ` | Email: ${crew.crew_members.email}`;
+            if (crew.crew_members.phone) context += ` | Phone: ${crew.crew_members.phone}`;
+            context += `\n`;
+          }
+        });
+      }
+
+      // Equipment usage
+      const equipment = equipmentByLogId[log.id] || [];
+      if (equipment.length > 0) {
+        context += `   🚜 EQUIPMENT USED (${equipment.length}):\n`;
+        equipment.forEach((equip: any) => {
+          context += `     ${equip.equipment?.name || 'Unknown Equipment'}`;
+          if (equip.equipment?.type) context += ` (${equip.equipment.type})`;
+          if (equip.hours_used) context += ` - ${equip.hours_used} hours`;
+          if (equip.notes) context += ` | Notes: ${equip.notes}`;
+          context += `\n`;
+        });
+      }
+
+      // Subcontractor participation
+      const subcontractors = subcontractorsByLogId[log.id] || [];
+      if (subcontractors.length > 0) {
+        context += `   🏗️ SUBCONTRACTORS ON SITE (${subcontractors.length}):\n`;
+        subcontractors.forEach((sub: any) => {
+          if (sub.subcontractors) {
+            context += `     ${sub.subcontractors.name}`;
+            if (sub.subcontractors.specialty) context += ` (${sub.subcontractors.specialty})`;
+            if (sub.subcontractors.contact_person) context += ` | Contact: ${sub.subcontractors.contact_person}`;
+            context += `\n`;
+          }
+        });
+      }
+
+      // Photos documentation
+      const photos = photosByLogId[log.id] || [];
+      if (photos.length > 0) {
+        context += `   📸 PHOTOS (${photos.length}):\n`;
+        photos.forEach((photo: any) => {
+          context += `     Photo: ${photo.caption || 'No caption'}\n`;
+        });
+      }
+
+      context += `\n`;
+    });
+
+    // Summary statistics for daily logs
+    const totalSections = data.logSections?.length || 0;
+    const totalCrews = data.logCrews?.length || 0;
+    const totalEquipment = data.logEquipment?.length || 0;
+    const totalPhotos = data.logPhotos?.length || 0;
+    const totalLogSubcontractors = data.logSubcontractors?.length || 0;
+
+    context += `DAILY LOGS STATISTICS:\n`;
+    context += `- ${data.dailyLogs.length} daily logs in database\n`;
+    context += `- ${totalSections} total log sections (work descriptions, delays, meetings)\n`;
+    context += `- ${totalCrews} crew assignments recorded\n`;
+    context += `- ${totalEquipment} equipment usage entries\n`;
+    context += `- ${totalPhotos} photos documented\n`;
+    context += `- ${totalLogSubcontractors} subcontractor participation records\n`;
+
+    // Equipment summary
+    if (data.equipment && data.equipment.length > 0) {
+      context += `\n🚜 EQUIPMENT INVENTORY (${data.equipment.length} items):\n`;
+      const activeEquipment = data.equipment.filter((e: any) => e.status === 'active' || !e.status);
+      const inactiveEquipment = data.equipment.filter((e: any) => e.status === 'inactive' || e.status === 'maintenance');
+      
+      context += `- ${activeEquipment.length} active equipment items\n`;
+      if (inactiveEquipment.length > 0) {
+        context += `- ${inactiveEquipment.length} inactive/maintenance equipment\n`;
+      }
+
+      // Group by type
+      const equipmentByType = data.equipment.reduce((acc: any, equip: any) => {
+        const type = equip.type || 'General';
+        if (!acc[type]) acc[type] = [];
+        acc[type].push(equip);
+        return acc;
+      }, {});
+
+      if (Object.keys(equipmentByType).length > 1) {
+        context += `Equipment types available: ${Object.keys(equipmentByType).join(', ')}\n`;
+      }
+    }
+  }
+
+  // Add subcontractors information for email drafting and project coordination
+  // Only include detailed subcontractor info when relevant to current context
+  if (data.subcontractors.length > 0) {
+    context += `\nSUBCONTRACTORS SUMMARY (${data.subcontractors.length} total):\n`;
+    
+    // Group by active/inactive status
+    const activeSubcontractors = data.subcontractors.filter((sub: any) => sub.is_active !== false);
+    const inactiveSubcontractors = data.subcontractors.filter((sub: any) => sub.is_active === false);
+    
+    context += `- ${activeSubcontractors.length} active subcontractors available\n`;
+    if (inactiveSubcontractors.length > 0) {
+      context += `- ${inactiveSubcontractors.length} inactive subcontractors on file\n`;
+    }
+    
+    // Email drafting quick reference with enhanced metrics
+    const emailReadyContractors = activeSubcontractors.filter((sub: any) => sub.contact_email);
+    const fullContactContractors = activeSubcontractors.filter((sub: any) => sub.contact_email && sub.contact_person);
+    const specialtyContractors = activeSubcontractors.filter((sub: any) => sub.specialty);
+    
+    context += `- ${emailReadyContractors.length} have email addresses for communication\n`;
+    context += `- ${fullContactContractors.length} have complete contact information\n`;
+    context += `- ${specialtyContractors.length} have specialties listed\n`;
+    
+    // Specialty breakdown for trade-specific context
+    const specialtyGroups = activeSubcontractors.reduce((acc: any, sub: any) => {
+      const specialty = sub.specialty || 'General';
+      if (!acc[specialty]) acc[specialty] = [];
+      acc[specialty].push(sub);
+      return acc;
+    }, {});
+    
+    if (Object.keys(specialtyGroups).length > 1) {
+      context += `\nAvailable specialties: ${Object.keys(specialtyGroups).join(', ')}\n`;
+    }
+    
+    // FULL SUBCONTRACTOR DATABASE FOR AI REFERENCE (not shown to user):
+    // Store complete subcontractor data for AI to access when needed
+    context += `\nFULL SUBCONTRACTOR DATABASE (for AI reference only):\n`;
+    activeSubcontractors.forEach((sub: any) => {
+      context += `${sub.name} | Contact: ${sub.contact_person || 'Not specified'} | Email: ${sub.contact_email || 'No email'} | Phone: ${sub.contact_phone || 'No phone'} | Specialty: ${sub.specialty || 'General'}`;
+      if (sub.address) context += ` | Address: ${sub.address}`;
+      if (sub.license_number) context += ` | License: ${sub.license_number}`;
+      if (sub.insurance_info) context += ` | Insurance: ${sub.insurance_info}`;
+      if (sub.notes) context += ` | Notes: ${sub.notes}`;
+      context += `\n`;
+    });
+    
+    context += `\n`;
   }
 
   if (data.error) {
@@ -640,48 +1016,55 @@ export async function POST(request: NextRequest) {
 
 ${dataContext}
 
-🔧 **DATABASE ACTION CAPABILITIES**: 
+DATABASE ACTION CAPABILITIES: 
 You can now perform database actions when users request changes. When a user asks you to update something in the database, you should:
 
-1. **Explain what you're going to do** in your response
-2. **Use the available action types** to make the change:
+1. Explain what you're going to do in your response
+2. Use the available action types to make the change:
    - update_action_item_status: Change status (open, in_progress, completed, cancelled)
    - add_action_item_note: Add progress notes
    - update_action_item_priority: Change priority (low, medium, high, urgent)
    - assign_action_item: Assign to someone
    - update_action_item_due_date: Set or change due date
 
-3. **Reference the specific action item ID** from the data above
-4. **Confirm the action** was successful
+3. Reference the specific action item ID from the data above
+4. Confirm the action was successful
 
 Example user requests you can handle:
-- "Mark action item #123 as completed"
+- "Mark action item 123 as completed"
 - "Change the priority of the drywall order to urgent"
-- "Add a note to action item #456 saying the materials arrived"
+- "Add a note to action item 456 saying the materials arrived"
 - "Assign the electrical work to John Smith"
-- "Set the due date for action item #789 to next Friday"
+- "Set the due date for action item 789 to next Friday"
 
 When making changes, always include relevant context and explain what was changed.
 
 CRITICAL ANALYSIS INSTRUCTIONS:
 
-1. **TIMESTAMP ANALYSIS**: Always analyze timestamps chronologically when discussing action items:
+1. TIMESTAMP ANALYSIS: Always analyze timestamps chronologically when discussing action items:
    - Look at creation dates, update dates, completion dates, and note timestamps
    - Consider the progression of notes over time to understand current status
    - Identify items that haven't been updated recently (potential stalled items)
    - Note when status changes occurred based on timestamp patterns
 
-2. **ACTION ITEM STATUS INTELLIGENCE**: 
+2. ACTION ITEM STATUS INTELLIGENCE: 
    - An item marked "completed" with recent completion timestamps IS completed
    - If you see notes about rescheduling or status changes, use the MOST RECENT information
    - Pay attention to note progression: earlier notes may be outdated by newer updates
    - Look for contradictions between status fields and recent notes
 
-3. **TEMPORAL CONTEXT**: When answering questions:
+3. TEMPORAL CONTEXT: When answering questions:
    - Always reference the most recent and relevant information based on timestamps
    - If an item was updated after the question timeframe, mention the current status
    - Distinguish between what was true historically vs. what is current
    - Flag items that may need attention based on lack of recent updates
+
+4. ACTION ITEM SCANNING FOR QUESTIONS: When users ask about specific people, companies, or work items:
+   - ALWAYS scan through ALL action items for relevant matches
+   - Look for assignments, descriptions, titles, and notes that mention the subject
+   - Check both open and completed items for full context
+   - Cross-reference with subcontractor database for complete contact information
+   - Present findings with timeline context and current status
 
 SPECIFIC EXAMPLE FROM YOUR DATA:
 - If someone asks "is there drywall that needs to be ordered?" look at:
@@ -689,6 +1072,12 @@ SPECIFIC EXAMPLE FROM YOUR DATA:
   2. The completion timestamp (when was it marked complete?)
   3. The most recent notes (what's the latest update?)
   4. Any notes about delivery dates or status changes
+
+- If someone asks about "Sierra West" or "Eric":
+  1. Scan ALL action items for mentions in titles, descriptions, assigned_to fields
+  2. Look for notes mentioning meetings, quotes, follow-ups
+  3. Check subcontractor database for contact details
+  4. Present complete timeline of interactions
 
 Based on this actual project data, provide helpful insights about:
 - Work progress and productivity trends
@@ -724,6 +1113,48 @@ You can provide insights on:
 - Progress tracking and completion rates
 - Risk identification from unresolved action items
 
+DAILY LOGS ANALYSIS & SEARCH:
+You have comprehensive access to daily log data including:
+- Daily log entries with dates, weather, temperatures, and superintendent information
+- Log sections containing detailed work descriptions, delays, meetings, and observations
+- Crew assignments and personnel participation for each day
+- Equipment usage tracking with hours and operational notes
+- Photo documentation with captions and timestamps
+- Subcontractor participation and on-site presence
+- Equipment inventory and status information
+
+DAILY LOGS CAPABILITIES:
+You can search, analyze, and answer questions about:
+- Work performed on specific dates or date ranges
+- Weather conditions and their impact on operations
+- Crew participation and attendance patterns
+- Equipment utilization and efficiency
+- Subcontractor activity and coordination
+- Safety incidents, meetings, and delays documented in logs
+- Photo documentation and project progress visualization
+- Work progression trends and productivity analysis
+- Seasonal and weather-related work patterns
+
+DAILY LOGS SEARCH INTELLIGENCE:
+When users ask about daily operations, always:
+1. Search through log sections for relevant work descriptions
+2. Cross-reference crew assignments with crew member database
+3. Match equipment usage with equipment inventory data
+4. Identify subcontractor participation and contact information
+5. Analyze photo documentation for visual progress context
+6. Consider weather impacts on work performance
+7. Track superintendent observations and management notes
+
+EXAMPLES OF DAILY LOGS QUERIES YOU CAN HANDLE:
+- "What work was performed last week?"
+- "Which crews worked on concrete pour?"
+- "What equipment was used on [specific date]?"
+- "Were there any delays documented in the logs?"
+- "What subcontractors were on site this month?"
+- "Show me photos from the foundation work"
+- "What was the weather like during roofing operations?"
+- "Who was the superintendent for the electrical rough-in?"
+
 CREW MEMBER DETAILS:
 You have access to detailed crew member information including names, roles, hourly rates, contact information, and notes. You can answer questions about:
 - Who works for the company and their roles
@@ -732,21 +1163,124 @@ You have access to detailed crew member information including names, roles, hour
 - Crew member skills and specialties
 - Availability and scheduling
 
-SUBCONTRACTOR DETAILS:
-You have complete access to subcontractor information including contact details, specialties, and business information. You can:
-- Draft professional emails to specific subcontractors using their correct email addresses
-- Reference their contact person names, phone numbers, and specialties
-- Include their license numbers and insurance information when relevant
-- Access their addresses for scheduling and logistics
-- Use their notes and historical information for context
-- Filter by active/inactive status
+SUBCONTRACTOR DETAILS & EMAIL DRAFTING:
+You have complete access to subcontractor information and can draft professional, ready-to-send emails. For each subcontractor you have:
+- Company name and contact person details
+- Specialty/trade expertise areas  
+- Complete contact information (email, phone, address)
+- License numbers and insurance information
+- Historical notes and project context
+- Active/inactive status
 
-When drafting emails or communications:
-- Always use the specific contact person's name if available
-- Include the correct email address from the database
-- Reference their specialty or area of expertise
-- Be professional and include relevant project context
-- Use their preferred contact methods (email/phone) as indicated in their records
+IMPORTANT: Only mention specific subcontractor details when:
+1. User asks about a specific contractor or company
+2. User requests email drafting
+3. User asks about available contractors for a specific trade
+4. User asks about contact information
+5. The conversation topic is directly related to subcontractor management
+
+For general questions, keep responses focused and concise without listing all contractor details.
+
+EMAIL DRAFTING CAPABILITIES:
+When drafting emails to subcontractors, you MUST create PROFESSIONAL, COPY-PASTE READY emails using all available database information:
+
+ENHANCED SUBCONTRACTOR & ACTION ITEM INTEGRATION:
+The system now automatically matches action items assigned to individuals with subcontractor database records. For example:
+- Action items assigned to "Eric" or "Eric Stilwell" will automatically match with "Sierra West Drywall" 
+- You have complete access to matched subcontractor contact information including email, phone, specialty, etc.
+- When discussing action items, always reference the complete subcontractor contact details when available
+
+AVAILABLE SUBCONTRACTOR DATA FIELDS:
+- name: Company/business name (e.g., "Sierra West Drywall")
+- contact_person: Individual contact person name (e.g., "Eric Stilwell")
+- contact_email: Primary email address for communication (e.g., "Eric@sierrawes.com")
+- contact_phone: Phone number for contact (e.g., "916.768.5200")
+- specialty: Trade/specialty area (e.g., "Drywall/Insulation")
+- address: Physical business address
+- license_number: Professional license information
+- insurance_info: Insurance coverage details
+- notes: Historical project notes and relationship context
+- is_active: Current status (active/inactive contractors)
+- created_at/updated_at: Relationship timeline
+
+CRITICAL: When users ask about contacting someone (like Eric from Sierra West Drywall), ALWAYS check both:
+1. The action items for context about what work is assigned
+2. The subcontractors database for complete contact information
+3. Present the matched information together for complete context
+
+EMAIL FORMATTING REQUIREMENTS:
+
+1. HEADER STRUCTURE (Always include these lines):
+   - Subject: Clear, descriptive subject with project context
+   - To: contact_email from database
+   - CC: additional emails if needed
+
+2. GREETING PROTOCOL:
+   - Use "Dear [contact_person]," if contact_person exists
+   - Use "Dear [name] Team," if only company name available
+   - Never use generic greetings when specific names are available
+
+3. BODY CONTENT INTEGRATION:
+   - Reference their specialty/trade expertise naturally
+   - Include relevant project context and timeline
+   - Use notes field for relationship building and historical context
+   - Reference license/insurance when compliance-related
+   - Include address reference for logistics/scheduling when relevant
+
+4. CONTACT INFORMATION USAGE:
+   - Always include their phone number for urgent matters
+   - Reference their license number for compliance-sensitive communications
+   - Use insurance info when discussing coverage requirements
+
+5. PROFESSIONAL CLOSING:
+   - Include sender's full contact information
+   - Add clear next steps or action items
+   - Professional sign-off with title/company
+
+COPY-PASTE READY FORMAT:
+Always format emails exactly like this:
+
+Subject: [Descriptive subject with project/location context]
+To: [contact_email]
+CC: [if applicable]
+
+Dear [contact_person/name],
+
+[Opening paragraph with project context and their specialty reference]
+
+[Main body with specific request/information using database context]
+
+[Closing with next steps and contact information]
+
+Best regards,
+[Your name]
+[Your title]
+[Company name]
+[Phone number]
+[Email address]
+
+EMAIL CONTENT INTELLIGENCE:
+- If specialty = "electrical" → Reference electrical work, codes, inspections
+- If specialty = "plumbing" → Reference plumbing systems, permits, fixtures  
+- If specialty = "HVAC" → Reference heating/cooling systems, ductwork
+- If notes contain project history → Reference previous successful collaborations
+- If license_number exists → Mention licensing compliance when relevant
+- If insurance_info exists → Reference coverage requirements when applicable
+
+EMAIL EXAMPLES BY SCENARIO:
+1. New Project Inquiry: Use specialty + notes for credibility
+2. Schedule Coordination: Use address + phone for logistics
+3. Compliance Communication: Use license_number + insurance_info
+4. Follow-up Communication: Use notes for relationship context
+
+When users request ANY email to subcontractors, always:
+Check the subcontractor database for complete information
+Create professional, ready-to-send emails with proper formatting
+Include all relevant database context naturally
+Provide copy-paste ready format with clear headers
+Reference specific trades/specialties appropriately
+
+When users request email drafts, always provide complete, professional emails that are ready to copy and paste into their email client.
 
 Always reference specific data from the logs and crew member records when possible. Use timestamps to provide accurate, current information. If asked about logs but no data is available, explain that no logs have been created yet and suggest creating the first daily log.
 
@@ -783,7 +1317,7 @@ Be conversational, practical, and focus on actionable insights for construction 
     const completion = await openaiClient.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
-      max_tokens: 1000,
+      max_tokens: 2000,
       temperature: 0.7,
     });
 
@@ -797,13 +1331,21 @@ Be conversational, practical, and focus on actionable insights for construction 
       );
     }
 
+    // Clean response by removing markdown formatting symbols
+    let cleanedResponse = response
+      .replace(/\*\*/g, '') // Remove bold markdown
+      .replace(/\*/g, '')   // Remove italic markdown and bullet points
+      .replace(/#{1,6}\s*/g, '') // Remove header markdown
+      .replace(/`{1,3}/g, '') // Remove code formatting
+      .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1'); // Convert links to plain text
+
     // Check for and execute actions in the response
     let actionResult = null;
-    let finalResponse = response;
+    let finalResponse = cleanedResponse;
 
     try {
       // Look for action JSON in the response
-      const actionMatch = response.match(/\{"action":\s*\{[^}]+\}\}/);
+      const actionMatch = cleanedResponse.match(/\{"action":\s*\{[^}]+\}\}/);
       if (actionMatch) {
         const actionJson = JSON.parse(actionMatch[0]);
         const { actionType, actionData } = actionJson.action;
@@ -812,13 +1354,13 @@ Be conversational, practical, and focus on actionable insights for construction 
         actionResult = await executeAction(actionType, actionData);
 
         // Update the response to include action confirmation
-        finalResponse = response.replace(actionMatch[0], '') +
-          `\n\n✅ **Action Completed**: ${actionResult.message}`;
+        finalResponse = cleanedResponse.replace(actionMatch[0], '') +
+          `\n\nAction Completed: ${actionResult.message}`;
       }
     } catch (actionError) {
       console.error('Error executing action:', actionError);
-      finalResponse = response +
-        `\n\n❌ **Action Failed**: ${actionError instanceof Error ? actionError.message : 'Unknown error occurred'}`;
+      finalResponse = cleanedResponse +
+        `\n\nAction Failed: ${actionError instanceof Error ? actionError.message : 'Unknown error occurred'}`;
     }
 
     // Log AI response
