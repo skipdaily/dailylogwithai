@@ -217,6 +217,27 @@ async function fetchConstructionData() {
       console.error('Error fetching subcontractors:', subcontractorsError);
     }
 
+    // Fetch project_subcontractors to identify officially awarded contractors
+    const { data: projectSubcontractors, error: projectSubcontractorsError } = await supabase
+      .from('project_subcontractors')
+      .select(`
+        id,
+        project_id,
+        subcontractor_id,
+        status,
+        assigned_date,
+        notes,
+        created_at,
+        updated_at,
+        projects(name, description, status),
+        subcontractors(name, specialty, contact_person, contact_email, contact_phone)
+      `)
+      .order('assigned_date', { ascending: false });
+
+    if (projectSubcontractorsError) {
+      console.error('Error fetching project subcontractors:', projectSubcontractorsError);
+    }
+
     return {
       dailyLogs: dailyLogs || [],
       logSections: logSections || [],
@@ -230,6 +251,7 @@ async function fetchConstructionData() {
       projects: projects || [],
       crewMembers: crewMembers || [],
       subcontractors: subcontractors || [],
+      projectSubcontractors: projectSubcontractors || [],
       error: null
     };
   } catch (error) {
@@ -247,6 +269,7 @@ async function fetchConstructionData() {
       projects: [],
       crewMembers: [],
       subcontractors: [],
+      projectSubcontractors: [],
       error: 'Failed to fetch some data'
     };
   }
@@ -690,6 +713,81 @@ function createDataContext(data: any) {
       context += `\n`;
     });
     
+    context += `\n`;
+  }
+
+  // Add project subcontractor awards to distinguish between officially awarded vs. mentioned in action items
+  if (data.projectSubcontractors && data.projectSubcontractors.length > 0) {
+    context += `\n🏆 OFFICIALLY AWARDED PROJECT SUBCONTRACTORS (${data.projectSubcontractors.length} total):\n`;
+    
+    // Group by status
+    const activeAwards = data.projectSubcontractors.filter((ps: any) => ps.status === 'active');
+    const completedAwards = data.projectSubcontractors.filter((ps: any) => ps.status === 'completed');
+    const inactiveAwards = data.projectSubcontractors.filter((ps: any) => ps.status === 'inactive');
+    
+    if (activeAwards.length > 0) {
+      context += `\n🔥 CURRENTLY ACTIVE AWARDS (${activeAwards.length}):\n`;
+      activeAwards.forEach((ps: any) => {
+        const sub = ps.subcontractors;
+        context += `  ✅ ${sub?.name || 'Unknown'} - ${sub?.specialty || 'No specialty'}\n`;
+        context += `     Project: ${ps.projects?.name || 'Unknown Project'}\n`;
+        context += `     Awarded: ${ps.assigned_date}\n`;
+        context += `     Contact: ${sub?.contact_person || 'No contact'} | ${sub?.contact_email || 'No email'} | ${sub?.contact_phone || 'No phone'}\n`;
+        if (ps.notes) context += `     Award Notes: ${ps.notes}\n`;
+        context += `\n`;
+      });
+    }
+    
+    if (completedAwards.length > 0) {
+      context += `\n✅ COMPLETED AWARDS (${completedAwards.length}):\n`;
+      completedAwards.forEach((ps: any) => {
+        const sub = ps.subcontractors;
+        context += `  🏁 ${sub?.name || 'Unknown'} - ${sub?.specialty || 'No specialty'}\n`;
+        context += `     Project: ${ps.projects?.name || 'Unknown Project'}\n`;
+        context += `     Awarded: ${ps.assigned_date} | Status: ${ps.status}\n`;
+        if (ps.notes) context += `     Completion Notes: ${ps.notes}\n`;
+        context += `\n`;
+      });
+    }
+    
+    if (inactiveAwards.length > 0) {
+      context += `\n❌ INACTIVE AWARDS (${inactiveAwards.length}):\n`;
+      inactiveAwards.forEach((ps: any) => {
+        const sub = ps.subcontractors;
+        context += `  ⏸️ ${sub?.name || 'Unknown'} - ${sub?.specialty || 'No specialty'}\n`;
+        context += `     Project: ${ps.projects?.name || 'Unknown Project'}\n`;
+        context += `     Status: ${ps.status} | Originally Awarded: ${ps.assigned_date}\n`;
+        if (ps.notes) context += `     Status Notes: ${ps.notes}\n`;
+        context += `\n`;
+      });
+    }
+    
+    // Create project award summary for quick reference
+    const projectAwardSummary = data.projectSubcontractors.reduce((acc: any, ps: any) => {
+      const projectName = ps.projects?.name || 'Unknown Project';
+      if (!acc[projectName]) acc[projectName] = { active: 0, completed: 0, inactive: 0, contractors: [] };
+      acc[projectName][ps.status]++;
+      acc[projectName].contractors.push({
+        name: ps.subcontractors?.name || 'Unknown',
+        specialty: ps.subcontractors?.specialty || 'No specialty',
+        status: ps.status
+      });
+      return acc;
+    }, {});
+    
+    context += `\n📊 PROJECT AWARD SUMMARY:\n`;
+    Object.entries(projectAwardSummary).forEach(([projectName, summary]: [string, any]) => {
+      context += `  ${projectName}:\n`;
+      if (summary.active > 0) context += `    - ${summary.active} active subcontractor(s)\n`;
+      if (summary.completed > 0) context += `    - ${summary.completed} completed subcontractor(s)\n`;
+      if (summary.inactive > 0) context += `    - ${summary.inactive} inactive subcontractor(s)\n`;
+      
+      // List contractors for this project
+      summary.contractors.forEach((contractor: any) => {
+        context += `      • ${contractor.name} (${contractor.specialty}) - ${contractor.status}\n`;
+      });
+      context += `\n`;
+    });
     context += `\n`;
   }
 
@@ -1172,12 +1270,33 @@ You have complete access to subcontractor information and can draft professional
 - Historical notes and project context
 - Active/inactive status
 
+🚨 CRITICAL: DISTINGUISH BETWEEN OFFICIALLY AWARDED vs. MENTIONED SUBCONTRACTORS:
+
+1. OFFICIALLY AWARDED SUBCONTRACTORS (in project_subcontractors table):
+   - These are contractors who have been formally awarded work on specific projects
+   - Status: active, completed, or inactive
+   - Have official assignment dates and award documentation
+   - When users ask "which contractor was awarded this project" or "who is the official contractor for X", ONLY reference these
+
+2. MENTIONED SUBCONTRACTORS (in action items only):
+   - These are contractors who appear in action item assignments or notes
+   - May be candidates, providing quotes, or doing small tasks
+   - NOT officially awarded major project work
+   - When users ask about "mentions" or "who has been contacted", reference these
+
+3. ANSWERING QUESTIONS ABOUT CONTRACTORS:
+   - "Who was awarded the electrical work?" → Check project_subcontractors for active/completed electrical contractors
+   - "Who is working on the plumbing?" → Check project_subcontractors for active status
+   - "Have we heard from any drywall contractors?" → Check action items for mentions
+   - "What contractors are officially on this project?" → Only list project_subcontractors with active/completed status
+
 IMPORTANT: Only mention specific subcontractor details when:
 1. User asks about a specific contractor or company
 2. User requests email drafting
 3. User asks about available contractors for a specific trade
 4. User asks about contact information
 5. The conversation topic is directly related to subcontractor management
+6. User asks about officially awarded vs. mentioned contractors
 
 For general questions, keep responses focused and concise without listing all contractor details.
 

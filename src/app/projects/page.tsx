@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { Building2, PlusCircle, Edit, Trash2, AlertCircle, Calendar, MapPin, User } from 'lucide-react';
+import { Building2, PlusCircle, Edit, Trash2, AlertCircle, Calendar, MapPin, User, Users, Eye } from 'lucide-react';
 
 interface Project {
   id: string;
@@ -15,6 +16,7 @@ interface Project {
 }
 
 export default function ProjectsPage() {
+  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -347,7 +349,12 @@ export default function ProjectsPage() {
                       <div className="flex items-center">
                         <Building2 className="h-5 w-5 text-gray-400 mr-3" />
                         <div>
-                          <div className="text-sm font-medium text-gray-900">{project.name}</div>
+                          <button
+                            onClick={() => router.push(`/projects/${project.id}`)}
+                            className="text-sm font-medium text-blue-600 hover:text-blue-900 hover:underline"
+                          >
+                            {project.name}
+                          </button>
                         </div>
                       </div>
                     </td>
@@ -370,18 +377,29 @@ export default function ProjectsPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <button
-                        onClick={() => handleEdit(project)}
-                        className="text-blue-600 hover:text-blue-900 mr-4"
-                      >
-                        <Edit className="h-4 w-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(project.id)}
-                        className="text-red-600 hover:text-red-900"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => router.push(`/projects/${project.id}`)}
+                          className="text-blue-600 hover:text-blue-900"
+                          title="View project overview"
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleEdit(project)}
+                          className="text-green-600 hover:text-green-900"
+                          title="Edit project"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(project.id)}
+                          className="text-red-600 hover:text-red-900"
+                          title="Delete project"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
