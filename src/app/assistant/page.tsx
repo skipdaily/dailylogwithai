@@ -543,7 +543,7 @@ export default function AssistantPage() {
               onClick={() => setQuery("Show me all overdue action items")}
               className="p-2 bg-red-50 text-red-700 rounded border border-red-200 hover:bg-red-100 transition-colors text-left"
             >
-              📋 Show Overdue Items
+              
             </button>
             <button
               onClick={() => setQuery("What action items need attention today?")}

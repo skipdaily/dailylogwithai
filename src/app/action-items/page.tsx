@@ -15,7 +15,7 @@ interface ActionItem {
   project_id?: string;
   assigned_to?: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'open' | 'in_progress' | 'completed' | 'on_hold' | 'cancelled';
+  status: 'open' | 'in_progress' | 'completed' | 'cancelled';
   due_date?: string;
   created_by?: string;
   created_at?: string;
@@ -89,6 +89,7 @@ function ActionItemsContent() {
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterProject, setFilterProject] = useState('');
+  const [showCompleted, setShowCompleted] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingItem, setEditingItem] = useState<ActionItem | null>(null);
   const [showNotesModal, setShowNotesModal] = useState(false);
@@ -105,7 +106,7 @@ function ActionItemsContent() {
     project_id: '',
     assigned_to: '',
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
-    status: 'open' as 'open' | 'in_progress' | 'completed' | 'on_hold' | 'cancelled',
+    status: 'open' as 'open' | 'in_progress' | 'completed' | 'cancelled',
     due_date: '',
     created_by: 'Thomas Gould' // Default, could be made dynamic
   });
@@ -477,7 +478,6 @@ function ActionItemsContent() {
     switch (status) {
       case 'completed': return 'text-green-600 bg-green-100';
       case 'in_progress': return 'text-blue-600 bg-blue-100';
-      case 'on_hold': return 'text-yellow-600 bg-yellow-100';
       case 'cancelled': return 'text-red-600 bg-red-100';
       case 'open': return 'text-gray-600 bg-gray-100';
       default: return 'text-gray-600 bg-gray-100';
@@ -488,7 +488,6 @@ function ActionItemsContent() {
     switch (status) {
       case 'completed': return <CheckCircle className="w-4 h-4" />;
       case 'in_progress': return <Clock className="w-4 h-4" />;
-      case 'on_hold': return <AlertTriangle className="w-4 h-4" />;
       case 'cancelled': return <AlertCircle className="w-4 h-4" />;
       default: return <FileText className="w-4 h-4" />;
     }
@@ -564,8 +563,10 @@ function ActionItemsContent() {
     const matchesStatus = !filterStatus || item.status === filterStatus;
     const matchesPriority = !filterPriority || item.priority === filterPriority;
     const matchesProject = !filterProject || item.project_id === filterProject;
+    // Show completed items if showCompleted is true OR if explicitly filtering for completed status
+    const matchesCompletedFilter = showCompleted || filterStatus === 'completed' || item.status !== 'completed';
 
-    return matchesSearch && matchesStatus && matchesPriority && matchesProject;
+    return matchesSearch && matchesStatus && matchesPriority && matchesProject && matchesCompletedFilter;
   });
 
   const openItems = filteredItems.filter(item => item.status === 'open').length;
@@ -609,6 +610,17 @@ function ActionItemsContent() {
               </div>
             </div>
             <div className="flex gap-2">
+              <button
+                onClick={() => setShowCompleted(!showCompleted)}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 whitespace-nowrap border ${
+                  showCompleted 
+                    ? 'bg-green-50 text-green-700 border-green-200 hover:bg-green-100' 
+                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                }`}
+              >
+                <CheckCircle className="w-4 h-4" />
+                {showCompleted ? 'Hide Completed' : 'Show Completed'}
+              </button>
               <button
                 onClick={handlePrintPDF}
                 className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2 whitespace-nowrap"
@@ -670,7 +682,6 @@ function ActionItemsContent() {
                 <option value="open">Open</option>
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
-                <option value="on_hold">On Hold</option>
                 <option value="cancelled">Cancelled</option>
               </select>
 
@@ -794,7 +805,6 @@ function ActionItemsContent() {
                             <option value="open">Open</option>
                             <option value="in_progress">In Progress</option>
                             <option value="completed">Completed</option>
-                            <option value="on_hold">On Hold</option>
                             <option value="cancelled">Cancelled</option>
                           </select>
                         </td>
@@ -1007,7 +1017,6 @@ function ActionItemsContent() {
                       <option value="open">Open</option>
                       <option value="in_progress">In Progress</option>
                       <option value="completed">Completed</option>
-                      <option value="on_hold">On Hold</option>
                       <option value="cancelled">Cancelled</option>
                     </select>
                   </div>
