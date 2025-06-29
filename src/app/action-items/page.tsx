@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, Suspense } from 'react';
-import { Plus, Search, Edit2, Trash2, AlertCircle, CheckCircle, Clock, AlertTriangle, FileText, MessageSquare, Printer } from 'lucide-react';
+import { Plus, Search, Edit2, Trash2, AlertCircle, CheckCircle, Clock, AlertTriangle, FileText, MessageSquare, Printer, ChevronUp, ChevronDown } from 'lucide-react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -98,6 +98,10 @@ function ActionItemsContent() {
   const [newNote, setNewNote] = useState('');
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [itemNotesCache, setItemNotesCache] = useState<{ [key: string]: ActionItemNote[] }>({});
+  
+  // Add sorting state
+  const [sortColumn, setSortColumn] = useState<'priority' | 'status' | 'assigned_to' | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [formData, setFormData] = useState({
     title: '',
@@ -454,6 +458,28 @@ function ActionItemsContent() {
     setExpandedItems(newExpandedItems);
   };
 
+  // Add sorting functions
+  const handleSort = (column: 'priority' | 'status' | 'assigned_to') => {
+    if (sortColumn === column) {
+      // Same column, toggle direction
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // New column, default to ascending
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortIcon = (column: 'priority' | 'status' | 'assigned_to') => {
+    if (sortColumn !== column) {
+      return <span className="text-gray-300">↕</span>;
+    }
+    
+    return sortDirection === 'asc' ? 
+      <ChevronUp className="w-4 h-4" /> : 
+      <ChevronDown className="w-4 h-4" />;
+  };
+
   const formatTimestamp = (timestamp: string) => {
     return new Date(timestamp).toLocaleString('en-US', {
       year: 'numeric',
@@ -567,6 +593,38 @@ function ActionItemsContent() {
     const matchesCompletedFilter = showCompleted || filterStatus === 'completed' || item.status !== 'completed';
 
     return matchesSearch && matchesStatus && matchesPriority && matchesProject && matchesCompletedFilter;
+  }).sort((a, b) => {
+    if (!sortColumn) return 0;
+
+    let aValue: string | number;
+    let bValue: string | number;
+
+    switch (sortColumn) {
+      case 'priority':
+        // Define priority order for sorting
+        const priorityOrder = { 'urgent': 4, 'high': 3, 'medium': 2, 'low': 1 };
+        aValue = priorityOrder[a.priority];
+        bValue = priorityOrder[b.priority];
+        break;
+      case 'status':
+        // Define status order for sorting
+        const statusOrder = { 'open': 1, 'in_progress': 2, 'completed': 3, 'cancelled': 4 };
+        aValue = statusOrder[a.status];
+        bValue = statusOrder[b.status];
+        break;
+      case 'assigned_to':
+        aValue = (a.assigned_to || '').toLowerCase();
+        bValue = (b.assigned_to || '').toLowerCase();
+        break;
+      default:
+        return 0;
+    }
+
+    if (sortDirection === 'asc') {
+      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+    } else {
+      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+    }
   });
 
   const openItems = filteredItems.filter(item => item.status === 'open').length;
@@ -750,9 +808,33 @@ function ActionItemsContent() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Priority</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned</th>
+                    <th 
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('priority')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Priority
+                        {getSortIcon('priority')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('status')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Status
+                        {getSortIcon('status')}
+                      </div>
+                    </th>
+                    <th 
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('assigned_to')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Assigned
+                        {getSortIcon('assigned_to')}
+                      </div>
+                    </th>
                     <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Due</th>
                     <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                   </tr>

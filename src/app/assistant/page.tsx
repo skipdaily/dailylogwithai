@@ -226,78 +226,203 @@ export default function AssistantPage() {
 
   // Function to detect and execute AI actions based on user message
   const detectAndExecuteActions = async (message: string, aiResponse: string) => {
-    // Simple pattern matching to detect action requests
+    console.log('🔍 detectAndExecuteActions called with message:', message);
+    
+    // Helper function to find action item by name or ID
+    const findActionItemByNameOrId = async (identifier: string): Promise<string | null> => {
+      try {
+        // First try to use it as UUID if it looks like one
+        if (/^[a-f0-9-]{36}$/i.test(identifier)) {
+          return identifier;
+        }
+        
+        // Otherwise, search by name
+        const response = await fetch(`/api/search-action-items?q=${encodeURIComponent(identifier)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.results.length > 0) {
+            // Return the first match
+            console.log('📋 Found action item:', data.results[0]);
+            return data.results[0].id;
+          }
+        }
+        
+        return null;
+      } catch (error) {
+        console.error('Error finding action item:', error);
+        return null;
+      }
+    };
+    
+    // Comprehensive pattern matching to detect action requests
     const actionPatterns = [
+      // Pattern for completing action items by name in quotes
       {
-        pattern: /mark.*action.*item.*#?(\d+).*(?:as\s+)?(completed|done|finished)/i,
+        pattern: /(?:mark|set|update|change|complete|finish).*(?:the\s+)?["']([^"']+)["'].*(?:action.*item|item|task)?.*(?:as\s+|to\s+)?(completed|done|finished|complete)/i,
         type: 'update_action_item_status',
-        extractData: (match: RegExpMatchArray) => ({
+        extractData: async (match: RegExpMatchArray) => {
+          const identifier = match[1];
+          const actionItemId = await findActionItemByNameOrId(identifier);
+          return {
+            actionItemId,
+            status: 'completed'
+          };
+        }
+      },
+      // Pattern for completing action items by UUID
+      {
+        pattern: /(?:mark|set|update|change).*(?:action.*item|item).*(?:#|id)?([a-f0-9-]{36}).*(?:as\s+|to\s+)?(completed|done|finished|complete)/i,
+        type: 'update_action_item_status',
+        extractData: async (match: RegExpMatchArray) => ({
           actionItemId: match[1],
           status: 'completed'
         })
       },
+      // Pattern for completing action items by name without quotes
       {
-        pattern: /(?:update|change|set).*priority.*(?:of|for).*#?(\d+).*(?:to\s+)?(urgent|high|medium|low)/i,
-        type: 'update_action_item_priority',
-        extractData: (match: RegExpMatchArray) => ({
-          actionItemId: match[1],
-          priority: match[2].toLowerCase()
-        })
-      },
-      {
-        pattern: /assign.*#?(\d+).*(?:to\s+)(.+?)(?:\s|$)/i,
-        type: 'assign_action_item',
-        extractData: (match: RegExpMatchArray) => ({
-          actionItemId: match[1],
-          assignedTo: match[2].trim()
-        })
-      },
-      {
-        pattern: /add.*note.*(?:to\s+)?(?:action.*item\s+)?#?(\d+).*?[:"'](.+)[:"']?/i,
-        type: 'add_action_item_note',
-        extractData: (match: RegExpMatchArray) => ({
-          actionItemId: match[1],
-          note: match[2].trim()
-        })
-      },
-      {
-        pattern: /(?:set|update).*due.*date.*(?:for|of).*#?(\d+).*(?:to\s+)?(\d{4}-\d{2}-\d{2}|\w+\s+\d{1,2}(?:,\s+\d{4})?)/i,
-        type: 'update_action_item_due_date',
-        extractData: (match: RegExpMatchArray) => {
-          let dueDate = match[2];
-          // Simple date parsing - you might want to make this more sophisticated
-          if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-            // Convert relative dates like "next Friday" to ISO format
-            // This is a simplified implementation
-            const today = new Date();
-            if (dueDate.toLowerCase().includes('friday')) {
-              const friday = new Date(today);
-              friday.setDate(today.getDate() + (5 - today.getDay() + 7) % 7);
-              dueDate = friday.toISOString().split('T')[0];
-            } else if (dueDate.toLowerCase().includes('monday')) {
-              const monday = new Date(today);
-              monday.setDate(today.getDate() + (1 - today.getDay() + 7) % 7);
-              dueDate = monday.toISOString().split('T')[0];
-            }
-          }
+        pattern: /(?:mark|complete|finish|done).*(?:the\s+)?([A-Z][a-zA-Z\s]+).*(?:action.*item|item|task)?.*(?:as\s+|to\s+)?(completed|done|finished|complete)/i,
+        type: 'update_action_item_status',
+        extractData: async (match: RegExpMatchArray) => {
+          const identifier = match[1].trim();
+          const actionItemId = await findActionItemByNameOrId(identifier);
           return {
-            actionItemId: match[1],
-            dueDate
+            actionItemId,
+            status: 'completed'
+          };
+        }
+      },
+      {
+        pattern: /(?:update|change|set).*priority.*(?:of|for).*(?:["']([^"']+)["']|(?:#|id)?([a-f0-9-]{36})).*(?:to\s+)?(urgent|high|medium|low)/i,
+        type: 'update_action_item_priority',
+        extractData: async (match: RegExpMatchArray) => {
+          const identifier = match[1] || match[2]; // Either quoted name or UUID
+          const actionItemId = await findActionItemByNameOrId(identifier);
+          return {
+            actionItemId,
+            priority: match[3].toLowerCase()
+          };
+        }
+      },
+      {
+        pattern: /assign.*(?:["']([^"']+)["']|(?:#|id)?([a-f0-9-]{36})).*(?:to\s+)(.+?)(?:\.|$)/i,
+        type: 'assign_action_item',
+        extractData: async (match: RegExpMatchArray) => {
+          const identifier = match[1] || match[2]; // Either quoted name or UUID
+          const actionItemId = await findActionItemByNameOrId(identifier);
+          return {
+            actionItemId,
+            assignedTo: match[3].trim()
+          };
+        }
+      },
+      {
+        pattern: /add.*note.*(?:to\s+)?(?:["']([^"']+)["']|(?:#|id)?([a-f0-9-]{36})).*?[:"'](.+?)[:"']?/i,
+        type: 'add_action_item_note',
+        extractData: async (match: RegExpMatchArray) => {
+          const identifier = match[1] || match[2]; // Either quoted name or UUID
+          const actionItemId = await findActionItemByNameOrId(identifier);
+          return {
+            actionItemId,
+            note: match[3].trim().replace(/[:"']/g, '')
           };
         }
       }
     ];
 
+    // Check if the AI response itself contains action instructions
+    // Look for JSON patterns that might be malformed
+    const jsonPatterns = [
+      /\{"action":\{"actionType":"([^"]+)","actionData":\{([^}]+)\}\}\}/g,
+      /\{"action":\{"actionType":"([^"]+)","actionData":\{([^}]+)\}\}/g, // Missing closing brace
+      /\{"action":\{[^}]*"actionType":"([^"]+)"[^}]*"actionData":\{([^}]*)\}[^}]*\}/g
+    ];
+    
+    for (const pattern of jsonPatterns) {
+      const aiActionMatch = aiResponse.match(pattern);
+      if (aiActionMatch) {
+        console.log('🎯 Found AI-generated action pattern in response:', aiActionMatch[0]);
+        
+        // Try to extract action info manually instead of parsing JSON
+        const actionTypeMatch = aiActionMatch[0].match(/"actionType":"([^"]+)"/);
+        const idMatch = aiActionMatch[0].match(/"id":"([^"]+)"/);
+        const statusMatch = aiActionMatch[0].match(/"status":"([^"]+)"/);
+        
+        if (actionTypeMatch && idMatch && statusMatch) {
+          const action = {
+            type: actionTypeMatch[1],
+            data: {
+              id: idMatch[1],
+              status: statusMatch[1]
+            }
+          };
+          
+          console.log('🚀 Executing manually extracted action:', action);
+          
+          try {
+            const actionResponse = await fetch('/api/ai-actions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                action,
+                userId: 'current_user'
+              }),
+            });
+
+            if (!actionResponse.ok) {
+              throw new Error(`HTTP error! status: ${actionResponse.status}`);
+            }
+
+            const actionResult = await actionResponse.json();
+            console.log('📊 Action result:', actionResult);
+            
+            if (actionResult.success) {
+              // Remove the JSON action from the response and add confirmation
+              const cleanResponse = aiResponse.replace(/\{"action":\{[^}]*\}[^}]*\}/g, '').trim();
+              return cleanResponse + '\n\n✅ **Action Completed**: ' + actionResult.message;
+            } else {
+              // Remove the JSON action from the response and add error
+              const cleanResponse = aiResponse.replace(/\{"action":\{[^}]*\}[^}]*\}/g, '').trim();
+              return cleanResponse + '\n\n❌ **Action Failed**: ' + actionResult.error;
+            }
+          } catch (error: any) {
+            console.error('💥 Error executing manually extracted action:', error);
+            // Remove the malformed JSON and continue without showing JSON parse error
+            const cleanResponse = aiResponse.replace(/\{"action":\{[^}]*\}[^}]*\}/g, '').trim();
+            return cleanResponse; // Don't show the JSON parse error to user
+          }
+        } else {
+          // Could not extract action info, just remove the malformed JSON
+          console.log('⚠️ Could not extract action info from malformed JSON, removing it');
+          const cleanResponse = aiResponse.replace(/\{"action":\{[^}]*\}[^}]*\}/g, '').trim();
+          return cleanResponse;
+        }
+      }
+    }
+
+    // Check user message for action patterns
     for (const pattern of actionPatterns) {
       const match = message.match(pattern.pattern);
       if (match) {
+        console.log('🎯 Pattern matched:', pattern.type, match);
         try {
-          const actionData = pattern.extractData(match);
+          const actionData = await pattern.extractData(match);
+          console.log('📋 Extracted action data:', actionData);
+          
+          // Validate that we have a valid action item ID
+          if (!actionData.actionItemId) {
+            console.log('❌ No valid action item ID found for:', match[0]);
+            return aiResponse + '\n\n❌ **Action Failed**: Could not find action item. Please specify the exact action item ID or ensure the item name is correct.';
+          }
+          
           const action = {
             type: pattern.type,
             data: actionData
           };
 
+          console.log('🚀 Sending action to API:', action);
+          
           const actionResponse = await fetch('/api/ai-actions', {
             method: 'POST',
             headers: {
@@ -309,7 +434,12 @@ export default function AssistantPage() {
             }),
           });
 
+          if (!actionResponse.ok) {
+            throw new Error(`HTTP error! status: ${actionResponse.status}`);
+          }
+
           const actionResult = await actionResponse.json();
+          console.log('📊 Action result:', actionResult);
           
           if (actionResult.success) {
             // Update the AI response to include confirmation
@@ -318,9 +448,9 @@ export default function AssistantPage() {
             // Add error message to AI response
             return aiResponse + '\n\n❌ **Action Failed**: ' + actionResult.error;
           }
-        } catch (error) {
-          console.error('Error executing action:', error);
-          return aiResponse + '\n\n❌ **Action Failed**: Unable to execute the requested action.';
+        } catch (error: any) {
+          console.error('💥 Error executing action:', error);
+          return aiResponse + '\n\n❌ **Action Failed**: ' + error.message;
         }
       }
     }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 import OpenAI from 'openai';
+import { executeAIAction } from '@/app/api/ai-actions/route';
 
 // Data fetching functions
 async function fetchConstructionData() {
@@ -358,6 +359,7 @@ function createDataContext(data: any) {
       context += `\n🚨 OVERDUE ITEMS (${overdueItems.length}) - IMMEDIATE ATTENTION REQUIRED:\n`;
       overdueItems.slice(0, 10).forEach((item: any) => {
         context += `\n[${item.priority.toUpperCase()}] ${item.title}\n`;
+        context += `  Internal ID: ${item.id}\n`; // Keep ID for AI reference but label it clearly
         context += `  Project: ${item.projects?.name || 'No Project'}\n`;
         context += `  Due: ${item.due_date} (${Math.floor((Date.now() - new Date(item.due_date).getTime()) / (1000 * 60 * 60 * 24))} days overdue)\n`;
         context += `  Assigned: ${item.assigned_to || 'Unassigned'}\n`;
@@ -399,6 +401,7 @@ function createDataContext(data: any) {
       context += `\n📋 OPEN ITEMS (${openItems.length}):\n`;
       openItems.slice(0, 15).forEach((item: any) => {
         context += `\n[${item.priority.toUpperCase()}] ${item.title}\n`;
+        context += `  Internal ID: ${item.id}\n`; // Keep ID for AI reference but label it clearly
         context += `  Project: ${item.projects?.name || 'No Project'}\n`;
         if (item.due_date) {
           const daysUntilDue = Math.floor((new Date(item.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -443,6 +446,7 @@ function createDataContext(data: any) {
       context += `\n🔄 IN PROGRESS ITEMS (${inProgressItems.length}):\n`;
       inProgressItems.slice(0, 10).forEach((item: any) => {
         context += `\n[${item.priority.toUpperCase()}] ${item.title}\n`;
+        context += `  Internal ID: ${item.id}\n`; // Keep ID for AI reference but label it clearly
         context += `  Project: ${item.projects?.name || 'No Project'}\n`;
         if (item.due_date) {
           const daysUntilDue = Math.floor((new Date(item.due_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
@@ -478,6 +482,7 @@ function createDataContext(data: any) {
         const completionDate = item.completed_at ? new Date(item.completed_at) : new Date(item.updated_at);
         const daysAgo = Math.floor((Date.now() - completionDate.getTime()) / (1000 * 60 * 60 * 24));
         context += `\n[${item.priority.toUpperCase()}] ${item.title}\n`;
+        context += `  Internal ID: ${item.id}\n`; // Keep ID for AI reference but label it clearly
         context += `  Project: ${item.projects?.name || 'No Project'}\n`;
         context += `  Completed: ${completionDate.toLocaleDateString()} (${daysAgo} days ago)\n`;
 
@@ -490,6 +495,16 @@ function createDataContext(data: any) {
     }
 
     context += `\n`;
+    
+    // Add a quick reference section for AI to easily find action item IDs
+    const allItems = [...overdueItems, ...openItems, ...inProgressItems];
+    if (allItems.length > 0) {
+      context += `🔍 QUICK REFERENCE - ACTION ITEM IDS FOR DATABASE OPERATIONS:\n`;
+      allItems.slice(0, 20).forEach((item: any) => {
+        context += `- "${item.title}" = ID: ${item.id}\n`;
+      });
+      context += `\n`;
+    }
   }
 
   // Add comprehensive action item notes analysis for additional context
@@ -912,152 +927,28 @@ async function logConversationContext(conversationId: string, constructionData: 
 // Action execution functions
 async function executeAction(actionType: string, actionData: any) {
   try {
-    switch (actionType) {
-      case 'update_action_item_status':
-        return await updateActionItemStatus(actionData.id, actionData.status, actionData.note, actionData.user);
-
-      case 'add_action_item_note':
-        return await addActionItemNote(actionData.id, actionData.note, actionData.user);
-
-      case 'create_action_item':
-        return await createActionItem(actionData);
-
-      case 'update_action_item_priority':
-        return await updateActionItemPriority(actionData.id, actionData.priority, actionData.user);
-
-      case 'assign_action_item':
-        return await assignActionItem(actionData.id, actionData.assignedTo, actionData.user);
-
-      case 'update_action_item_due_date':
-        return await updateActionItemDueDate(actionData.id, actionData.dueDate, actionData.user);
-
-      default:
-        throw new Error(`Unknown action type: ${actionType}`);
-    }
+    console.log('executeAction called with:', { actionType, actionData });
+    
+    // Call the imported action function directly instead of making HTTP calls
+    const action = {
+      type: actionType,
+      data: {
+        actionItemId: actionData.actionItemId,
+        ...actionData
+      }
+    };
+    
+    console.log('Calling executeAIAction with:', { action, userId: actionData.user || 'AI Assistant' });
+    
+    const userId = actionData.user || 'AI Assistant';
+    const result = await executeAIAction(action, userId);
+    
+    console.log('executeAIAction returned:', result);
+    return result;
   } catch (error) {
     console.error(`Error executing action ${actionType}:`, error);
     throw error;
   }
-}
-
-async function updateActionItemStatus(id: string, status: string, note?: string, user?: string) {
-  const updateData: any = {
-    status,
-    updated_at: new Date().toISOString()
-  };
-
-  if (status === 'completed') {
-    updateData.completed_at = new Date().toISOString();
-  }
-
-  const { data, error } = await supabase
-    .from('action_items')
-    .update(updateData)
-    .eq('id', id)
-    .select();
-
-  if (error) throw error;
-
-  // Add a note about the status change
-  if (note) {
-    await addActionItemNote(id, note, user || 'AI Assistant');
-  } else {
-    await addActionItemNote(id, `Status updated to ${status}`, user || 'AI Assistant');
-  }
-
-  return { success: true, data, message: `Action item status updated to ${status}` };
-}
-
-async function addActionItemNote(id: string, note: string, user: string = 'AI Assistant') {
-  const { data, error } = await supabase
-    .from('action_item_notes')
-    .insert([{
-      action_item_id: id,
-      note,
-      created_by: user,
-      created_at: new Date().toISOString()
-    }])
-    .select();
-
-  if (error) throw error;
-  return { success: true, data, message: 'Note added successfully' };
-}
-
-async function createActionItem(actionData: any) {
-  const { data, error } = await supabase
-    .from('action_items')
-    .insert([{
-      title: actionData.title,
-      description: actionData.description,
-      priority: actionData.priority || 'medium',
-      status: 'open',
-      assigned_to: actionData.assignedTo,
-      due_date: actionData.dueDate,
-      project_id: actionData.projectId,
-      daily_log_id: actionData.dailyLogId,
-      source: actionData.source || 'ai_assistant',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    }])
-    .select();
-
-  if (error) throw error;
-
-  // Add initial note if provided
-  if (actionData.initialNote) {
-    await addActionItemNote(data[0].id, actionData.initialNote, actionData.user || 'AI Assistant');
-  }
-
-  return { success: true, data, message: 'Action item created successfully' };
-}
-
-async function updateActionItemPriority(id: string, priority: string, user?: string) {
-  const { data, error } = await supabase
-    .from('action_items')
-    .update({
-      priority,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', id)
-    .select();
-
-  if (error) throw error;
-
-  await addActionItemNote(id, `Priority updated to ${priority}`, user || 'AI Assistant');
-  return { success: true, data, message: `Action item priority updated to ${priority}` };
-}
-
-async function assignActionItem(id: string, assignedTo: string, user?: string) {
-  const { data, error } = await supabase
-    .from('action_items')
-    .update({
-      assigned_to: assignedTo,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', id)
-    .select();
-
-  if (error) throw error;
-
-  await addActionItemNote(id, `Assigned to ${assignedTo}`, user || 'AI Assistant');
-  return { success: true, data, message: `Action item assigned to ${assignedTo}` };
-}
-
-async function updateActionItemDueDate(id: string, dueDate: string, user?: string) {
-  const { data, error } = await supabase
-    .from('action_items')
-    .update({
-      due_date: dueDate,
-      updated_at: new Date().toISOString()
-    })
-    .eq('id', id)
-    .select();
-
-  if (error) throw error;
-
-  const formattedDate = new Date(dueDate).toLocaleDateString();
-  await addActionItemNote(id, `Due date updated to ${formattedDate}`, user || 'AI Assistant');
-  return { success: true, data, message: `Action item due date updated to ${formattedDate}` };
 }
 
 export async function POST(request: NextRequest) {
@@ -1118,24 +1009,36 @@ DATABASE ACTION CAPABILITIES:
 You can now perform database actions when users request changes. When a user asks you to update something in the database, you should:
 
 1. Explain what you're going to do in your response
-2. Use the available action types to make the change:
-   - update_action_item_status: Change status (open, in_progress, completed, cancelled)
-   - add_action_item_note: Add progress notes
-   - update_action_item_priority: Change priority (low, medium, high, urgent)
-   - assign_action_item: Assign to someone
-   - update_action_item_due_date: Set or change due date
+2. Include the action JSON at the end of your response in this EXACT format (no extra spaces or characters):
+{"action":{"actionType":"action_name","actionData":{"id":"action_item_id","status":"new_status","user":"AI Assistant"}}}
 
-3. Reference the specific action item ID from the data above
-4. Confirm the action was successful
+Available action types:
+- update_action_item_status: Change status (open, in_progress, completed, cancelled)
+- add_action_item_note: Add progress notes  
+- update_action_item_priority: Change priority (low, medium, high, urgent)
+- assign_action_item: Assign to someone
+- update_action_item_due_date: Set or change due date
 
-Example user requests you can handle:
-- "Mark action item 123 as completed"
-- "Change the priority of the drywall order to urgent"
-- "Add a note to action item 456 saying the materials arrived"
-- "Assign the electrical work to John Smith"
-- "Set the due date for action item 789 to next Friday"
+3. Reference the specific action item Internal ID from the data above (DO NOT show Internal IDs to users in your responses)
+4. The action will be executed automatically
 
-When making changes, always include relevant context and explain what was changed.
+IMPORTANT: When discussing action items with users, refer to them by title only (e.g., "Small Punch List" not "Small Punch List (ID: xxx)"). The Internal IDs are for your database operations only and should never be displayed to users.
+
+CRITICAL JSON FORMAT RULES:
+- Use double quotes for all strings
+- No extra spaces around colons or commas
+- No trailing commas
+- No line breaks within the JSON
+- Place the JSON on its own line at the very end of your response
+
+Examples (copy these formats exactly):
+- To mark as completed: {"action":{"type":"update_action_item_status","data":{"actionItemId":"item_id_here","status":"completed","note":"Optional note"}}}
+- To add a note: {"action":{"type":"add_action_item_note","data":{"actionItemId":"item_id_here","note":"Your note here"}}}
+- To change priority: {"action":{"type":"update_action_item_priority","data":{"actionItemId":"item_id_here","priority":"urgent"}}}
+
+CRITICAL: Replace "item_id_here" with the exact Internal ID value from the data above. If you cannot find the specific action item being referenced, explain this to the user instead of generating invalid JSON.
+
+When making changes, always include relevant context and explain what was changed, then include the action JSON.
 
 CRITICAL ANALYSIS INSTRUCTIONS:
 
@@ -1436,8 +1339,8 @@ Be conversational, practical, and focus on actionable insights for construction 
     const completion = await openaiClient.chat.completions.create({
       model: "gpt-4o-mini",
       messages,
-      max_tokens: 2000,
-      temperature: 0.7,
+      max_tokens: 4000,
+      temperature: 0.4,
     });
 
     const response = completion.choices[0]?.message?.content;
@@ -1461,25 +1364,152 @@ Be conversational, practical, and focus on actionable insights for construction 
     // Check for and execute actions in the response
     let actionResult = null;
     let finalResponse = cleanedResponse;
+    let actionMatch = null;
 
     try {
-      // Look for action JSON in the response
-      const actionMatch = cleanedResponse.match(/\{"action":\s*\{[^}]+\}\}/);
+      // Look for action JSON in the response - improved pattern matching with multiple attempts
+      actionMatch = cleanedResponse.match(/\{"action":\s*\{[^}]+\}\}/);
+      
+      // If that doesn't work, try a more flexible pattern
+      if (!actionMatch) {
+        actionMatch = cleanedResponse.match(/\{"action":\s*\{[\s\S]*?\}\}/);
+      }
+      
+      // Try to find just the inner action object
+      if (!actionMatch) {
+        actionMatch = cleanedResponse.match(/"type":\s*"[^"]+",\s*"data":\s*\{[^}]+\}/);
+        if (actionMatch) {
+          actionMatch[0] = `{"action": {${actionMatch[0]}}}`;
+        }
+      }
+      
+      // Check for incomplete JSON (like a single "}")
+      if (!actionMatch && cleanedResponse.includes('}') && !cleanedResponse.includes('{"action"')) {
+        console.log('Detected incomplete JSON in response:', cleanedResponse);
+        finalResponse = cleanedResponse.replace(/\s*\}\s*$/, '') +
+          '\n\n❌ **Action Failed**: The action command was incomplete. Please try your request again with more specific details about which action item you want to modify.';
+        return NextResponse.json({
+          response: finalResponse,
+          conversationId,
+          sessionId: sessionId || `session_${Date.now()}`,
+          metadata: {
+            responseTime,
+            tokenCount: completion.usage?.total_tokens,
+            actionExecuted: false
+          }
+        });
+      }
+
       if (actionMatch) {
-        const actionJson = JSON.parse(actionMatch[0]);
+        console.log('Found action pattern:', actionMatch[0]);
+        console.log('Full AI response:', cleanedResponse);
+        
+        // Clean the JSON string to remove any potential formatting issues
+        let jsonString = actionMatch[0]
+          .replace(/[\u0000-\u001F\u007F-\u009F]/g, '') // Remove control characters
+          .replace(/\s+/g, ' ') // Normalize whitespace
+          .trim();
+        
+        console.log('Cleaned JSON string:', jsonString);
+        
+        let actionJson;
+        try {
+          actionJson = JSON.parse(jsonString);
+        } catch (parseError) {
+          console.error('JSON parse error:', parseError);
+          console.error('Problematic JSON:', jsonString);
+          
+          // Try to manually construct the action if we can extract the parts
+          const actionTypeMatch = jsonString.match(/"actionType":\s*"([^"]+)"/);
+          const idMatch = jsonString.match(/"id":\s*"([^"]+)"/);
+          const statusMatch = jsonString.match(/"status":\s*"([^"]+)"/);
+          const noteMatch = jsonString.match(/"note":\s*"([^"]+)"/);
+          const userMatch = jsonString.match(/"user":\s*"([^"]+)"/);
+          
+          if (actionTypeMatch && idMatch) {
+            actionJson = {
+              action: {
+                actionType: actionTypeMatch[1],
+                actionData: {
+                  id: idMatch[1],
+                  status: statusMatch ? statusMatch[1] : undefined,
+                  note: noteMatch ? noteMatch[1] : undefined,
+                  user: userMatch ? userMatch[1] : 'AI Assistant'
+                }
+              }
+            };
+            console.log('Manually constructed action from malformed JSON:', actionJson);
+          } else {
+            // Could not extract action info, just remove the malformed JSON and continue
+            console.log('Could not extract action from malformed JSON, skipping action execution');
+            finalResponse = cleanedResponse.replace(actionMatch[0], '').trim();
+            throw new Error('SKIP_ACTION'); // Special error to skip showing parse error
+          }
+        }
+        
         const { actionType, actionData } = actionJson.action;
 
         console.log('Executing action:', actionType, actionData);
-        actionResult = await executeAction(actionType, actionData);
+        
+        // Ensure we have the required fields
+        if (!actionType || !actionData) {
+          throw new Error('Invalid action format: missing actionType or actionData');
+        }
+
+        // Convert to the format expected by executeAction
+        const action = {
+          type: actionType,
+          data: actionData
+        };
+
+        actionResult = await executeAction(action.type, action.data);
+        console.log('Action result:', actionResult);
 
         // Update the response to include action confirmation
-        finalResponse = cleanedResponse.replace(actionMatch[0], '') +
-          `\n\nAction Completed: ${actionResult.message}`;
+        if (actionResult && actionResult.success) {
+          const successMessage = actionResult.message || 'Action completed successfully';
+          finalResponse = cleanedResponse.replace(actionMatch[0], '').trim() +
+            `\n\n✅ Action Completed: ${successMessage}`;
+        } else {
+          const errorMessage = actionResult?.error || 'Action failed';
+          finalResponse = cleanedResponse.replace(actionMatch[0], '').trim() +
+            `\n\n❌ Action Failed: ${errorMessage}`;
+        }
       }
     } catch (actionError) {
       console.error('Error executing action:', actionError);
-      finalResponse = cleanedResponse +
-        `\n\nAction Failed: ${actionError instanceof Error ? actionError.message : 'Unknown error occurred'}`;
+      
+      // Handle special SKIP_ACTION error - don't show error to user
+      if (actionError instanceof Error && actionError.message === 'SKIP_ACTION') {
+        // finalResponse was already set above, just continue
+        console.log('Skipping action execution and error display due to malformed JSON');
+      } else {
+        console.error('Action error details:', {
+          message: actionError instanceof Error ? actionError.message : 'Unknown error',
+          stack: actionError instanceof Error ? actionError.stack : null,
+          code: (actionError as any)?.code,
+          details: (actionError as any)?.details,
+          hint: (actionError as any)?.hint
+        });
+        
+        // Provide more specific error messages based on the error type
+        let errorMessage = 'Unknown error occurred';
+        if (actionError instanceof Error) {
+          errorMessage = actionError.message;
+          
+          // Check for specific database errors
+          if ((actionError as any)?.code === '23503') {
+            errorMessage = `Action item ID not found in database. Please verify the action item ID and try again.`;
+          } else if ((actionError as any)?.message?.includes('violates foreign key constraint')) {
+            errorMessage = `Invalid action item ID. The action item may have been deleted or the ID is incorrect.`;
+          } else {
+            errorMessage = actionError.message;
+          }
+        }
+        
+        finalResponse = cleanedResponse.replace(actionMatch?.[0] || '', '').trim() +
+          `\n\n❌ Action Failed: ${errorMessage}`;
+      }
     }
 
     // Log AI response
