@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles, Loader2, MessageSquare, Plus, ChevronDown, Clock, Mic } from 'lucide-react';
+import { Send, Sparkles, Loader2, MessageSquare, Plus, ChevronDown, Clock, Mic, Volume2, VolumeX } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -28,143 +28,349 @@ export default function AssistantPage() {
   const [showChatList, setShowChatList] = useState(false);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
-  const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isPushToTalkActive, setIsPushToTalkActive] = useState(false);
+  const [voiceTranscript, setVoiceTranscript] = useState('');
+  const [selectedVoice, setSelectedVoice] = useState<string>('alloy');
+  const [isVoiceResponseEnabled, setIsVoiceResponseEnabled] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const recognitionRef = useRef<any>(null);
 
   // 🎙️  ────────────────────────────────────────────────────────────
-  // Client‑side Speech helpers
+  // Client‑side Speech helpers with OpenAI TTS
   // ───────────────────────────────────────────────────────────────
-  const speak = (text: string) => {
-    if (typeof window === 'undefined' || !("speechSynthesis" in window)) return;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1; // Normal speed
-    window.speechSynthesis.speak(utterance);
+  const speak = async (text: string) => {
+    if (typeof window === 'undefined' || !hasApiKey) return;
+    
+    // Clean text for TTS (remove markdown and special characters)
+    const cleanText = text
+      .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markdown
+      .replace(/\*(.*?)\*/g, '$1') // Remove italic markdown
+      .replace(/#{1,6}\s/g, '') // Remove headers
+      .replace(/```[\s\S]*?```/g, '[code block]') // Replace code blocks
+      .replace(/`([^`]+)`/g, '$1') // Remove inline code backticks
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1') // Remove links, keep text
+      .replace(/[✅❌📊📋📝⚠️💰⚡]/g, '') // Remove emojis
+      .replace(/\n\n+/g, '. ') // Replace multiple newlines with periods
+      .replace(/\n/g, ' ') // Replace single newlines with spaces
+      .trim();
+
+    if (!cleanText) return;
+
+    try {
+      setIsSpeaking(true);
+      
+      // Stop any currently playing audio
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+
+      console.log('🔊 Generating OpenAI TTS for:', cleanText.substring(0, 100) + '...');
+
+      const apiKey = localStorage.getItem('openai_api_key');
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: cleanText,
+          voice: selectedVoice,
+          speed: 1.0,
+          apiKey: apiKey
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'TTS request failed');
+      }
+
+      const data = await response.json();
+      
+      // Create audio from base64 data
+      const audioBlob = new Blob([
+        Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))
+      ], { type: 'audio/mpeg' });
+      
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
+      currentAudioRef.current = audio;
+
+      // Set up audio event listeners
+      audio.onended = () => {
+        setIsSpeaking(false);
+        URL.revokeObjectURL(audioUrl);
+        currentAudioRef.current = null;
+        console.log('🔊 TTS playback finished');
+      };
+
+      audio.onerror = (e) => {
+        console.error('🔊 Audio playback error:', e);
+        setIsSpeaking(false);
+        URL.revokeObjectURL(audioUrl);
+        currentAudioRef.current = null;
+      };
+
+      // Play the audio
+      await audio.play();
+      console.log('🔊 TTS playback started');
+
+    } catch (error: any) {
+      console.error('🔊 TTS error:', error);
+      setIsSpeaking(false);
+      
+      // Fallback to browser TTS if OpenAI TTS fails
+      if ("speechSynthesis" in window) {
+        console.log('🔊 Falling back to browser TTS');
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.rate = 1;
+        utterance.onend = () => setIsSpeaking(false);
+        window.speechSynthesis.speak(utterance);
+      }
+    }
   };
 
-  const listenForResponse = () => {
-    if (typeof window === 'undefined' || !isVoiceModeActive) return;
+  const stopSpeaking = () => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+  };
+
+  // Check microphone permission
+  const checkMicrophonePermission = async () => {
+    try {
+      if (navigator.permissions) {
+        const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+        console.log('🎙️ Microphone permission:', result.state);
+        return result.state === 'granted';
+      }
+      return true; // Assume granted if we can't check
+    } catch (error) {
+      console.log('🎙️ Could not check microphone permission:', error);
+      return true; // Assume granted if we can't check
+    }
+  };
+
+  // Function to handle voice-triggered submissions
+  const handleVoiceSubmission = async (voiceQuery: string) => {
+    if (!voiceQuery.trim() || isLoading || !currentChatId) return;
     
-    console.log('🎙️ Starting voice recognition...');
+    console.log('🎙️ Processing voice submission:', voiceQuery);      // Clear the voice transcript
+      setVoiceTranscript('');
+      
+      const userMessage: Message = {
+        role: 'user',
+        content: voiceQuery.trim(),
+        timestamp: new Date().toISOString()
+      };
+
+      // Add user message to current chat
+      updateChatWithMessage(currentChatId, userMessage);
+
+      // Update chat title if this is the first user message
+      const currentChatMessages = currentChat?.messages || [];
+      if (currentChatMessages.filter(m => m.role === 'user').length === 0) {
+        updateChatTitle(currentChatId, voiceQuery.trim());
+      }
+      
+      setQuery(''); // Clear the input
+      setVoiceTranscript(''); // Clear the voice transcript
+      setIsLoading(true);
+
+      try {
+        const conversationHistory = currentChat?.messages || [];
+        
+        // Get API key from localStorage
+        const apiKey = localStorage.getItem('openai_api_key');
+        
+        const response = await fetch('/api/ai', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ 
+            message: voiceQuery.trim(),
+            sessionId: currentChatId,
+            userId: 'current_user',
+            conversationHistory: conversationHistory.slice(-10),
+            apiKey: apiKey
+          }),
+        });
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Failed to get AI response');
+        }
+        
+        const data = await response.json();
+        
+        // Check for and execute any actions based on the user's message
+        const enhancedResponse = await detectAndExecuteActions(voiceQuery.trim(), data.response);
+        
+        const aiMessage: Message = {
+          role: 'assistant',
+          content: enhancedResponse,
+          timestamp: new Date().toISOString(),
+          logsAnalyzed: data.logsAnalyzed,
+          actionItemsAnalyzed: data.actionItemsAnalyzed,
+          notesAnalyzed: data.notesAnalyzed
+        };
+
+        updateChatWithMessage(currentChatId, aiMessage);
+        
+        // 🔈 Speak the AI response aloud only if voice response is enabled
+        if (isVoiceResponseEnabled) {
+          speak(enhancedResponse);
+        }
+      
+    } catch (error: any) {
+      console.error('Error fetching AI response:', error);
+      let errorMessage = 'Sorry, I encountered an error processing your request.';
+      
+      if (error.message.includes('quota')) {
+        errorMessage = 'OpenAI API quota exceeded. Please check your billing or try again later.';
+      } else if (error.message.includes('key')) {
+        errorMessage = 'OpenAI API key issue. Please check your configuration.';
+      }
+      
+      const errorAiMessage: Message = {
+        role: 'assistant',
+        content: errorMessage + ' Please try again or contact support.',
+        timestamp: new Date().toISOString()
+      };
+
+      updateChatWithMessage(currentChatId, errorAiMessage);
+      
+      // 🔈 Speak the error message aloud only if voice response is enabled
+      if (isVoiceResponseEnabled) {
+        speak(errorMessage + ' Please try again or contact support.');
+      }
+      
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Start push-to-talk recognition
+  const startPushToTalk = async () => {
+    if (typeof window === 'undefined' || isPushToTalkActive) return;
     
+    // Check if we have API key first
+    if (!hasApiKey) {
+      alert('Please add your OpenAI API key in Settings before using voice features.');
+      return;
+    }
+
+    // Check microphone permission
+    const hasMicPermission = await checkMicrophonePermission();
+    if (!hasMicPermission) {
+      alert('Microphone permission is required for voice input. Please allow microphone access.');
+      return;
+    }
+    
+    console.log('🎙️ Starting push-to-talk...');
+    
+    // Check for SpeechRecognition support
     // @ts-ignore – webkit fallback
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert('Sorry, voice recognition is not supported in this browser.');
-      setIsVoiceModeActive(false);
+      alert('Sorry, voice recognition is not supported in this browser. Please use Chrome, Edge, or Safari.');
       return;
     }
 
     // @ts-ignore – constructor
     const recognition = new SpeechRecognition();
     recognition.lang = 'en-US';
-    recognition.interimResults = false;
+    recognition.interimResults = true; // Enable interim results for real-time display
     recognition.maxAlternatives = 1;
-    recognition.continuous = false;
+    recognition.continuous = true; // Keep listening while button is held
 
-    console.log('🎙️ Voice recognition configured, starting...');
+    recognitionRef.current = recognition;
     
-    try {
-      recognition.start();
-    } catch (error) {
-      console.error('Error starting recognition:', error);
-      if (isVoiceModeActive) {
-        setTimeout(() => {
-          if (isVoiceModeActive) listenForResponse();
-        }, 1000);
-      }
-      return;
-    }
-
+    // Set up event handlers
     recognition.onstart = () => {
-      console.log('🎙️ Voice recognition started');
+      console.log('🎙️ Push-to-talk started');
+      setIsPushToTalkActive(true);
+      setVoiceTranscript('');
     };
 
     recognition.onresult = (event: any) => {
-      console.log('🎙️ Voice recognition result:', event);
-      if (!isVoiceModeActive) return;
+      let finalTranscript = '';
+      let interimTranscript = '';
       
-      const transcript = event.results[0][0].transcript;
-      console.log('🎙️ Transcript:', transcript);
-      
-      if (transcript && transcript.trim()) {
-        setQuery(transcript);
-        console.log('🎙️ Query set to:', transcript);
-        
-        // Submit the form after a short delay
-        setTimeout(() => {
-          if (isVoiceModeActive) {
-            console.log('🎙️ Submitting form...');
-            const form = document.querySelector('form');
-            if (form) {
-              const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
-              form.dispatchEvent(submitEvent);
-            }
-          }
-        }, 500);
+      // Process all results to build complete transcript
+      for (let i = 0; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
       }
+      
+      // Build the complete transcript by combining all final results + current interim
+      const completeTranscript = finalTranscript + interimTranscript;
+      setVoiceTranscript(completeTranscript);
+      
+      console.log('🎙️ Speech update - Final:', finalTranscript, 'Interim:', interimTranscript, 'Complete:', completeTranscript);
     };
 
     recognition.onerror = (event: any) => {
       console.error('🎙️ Speech recognition error:', event.error);
-      if (isVoiceModeActive) {
-        // Try again after a short delay unless it's a critical error
-        if (event.error !== 'not-allowed' && event.error !== 'service-not-allowed') {
-          setTimeout(() => {
-            if (isVoiceModeActive) {
-              console.log('🎙️ Retrying after error...');
-              listenForResponse();
-            }
-          }, 1000);
-        } else {
-          console.log('🎙️ Critical error, stopping voice mode');
-          setIsVoiceModeActive(false);
-        }
+      
+      if (event.error === 'not-allowed') {
+        alert('Microphone access denied. Please allow microphone access and try again.');
+      } else if (event.error === 'audio-capture') {
+        alert('No microphone was found. Please ensure that a microphone is installed.');
+      } else if (event.error === 'service-not-allowed') {
+        alert('Speech recognition service not allowed. Please check your browser settings.');
       }
+      
+      stopPushToTalk();
     };
 
     recognition.onend = () => {
-      console.log('🎙️ Voice recognition ended');
-      // Don't automatically restart here - let the success flow handle it
+      console.log('🎙️ Push-to-talk ended');
+      // Don't auto-restart - this is controlled by button press/release
     };
+
+    // Start recognition
+    try {
+      recognition.start();
+    } catch (error: any) {
+      console.error('🎙️ Error starting recognition:', error);
+      alert('Failed to start voice recognition: ' + (error.message || error.toString()));
+      stopPushToTalk();
+    }
   };
 
-  const startVoiceChat = () => {
-    if (isVoiceModeActive) {
-      // Turn off voice mode
-      console.log('🎙️ Stopping voice mode');
-      setIsVoiceModeActive(false);
-      // Stop any ongoing speech
-      if (typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
-      return;
-    }
-
-    // Turn on voice mode
-    console.log('🎙️ Starting voice mode');
-    setIsVoiceModeActive(true);
-    
-    // Check if we have API key first
-    if (!hasApiKey) {
-      alert('Please add your OpenAI API key in Settings before using voice mode.');
-      setIsVoiceModeActive(false);
-      return;
+  // Stop push-to-talk recognition and submit if there's content
+  const stopPushToTalk = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
     }
     
-    const greeting = 'Hello! How can I help you with your construction project today? Voice mode is now active.';
-    speak(greeting);
-
-    // Wait until the greeting is finished, then start listening
-    const wait = setInterval(() => {
-      if (!window.speechSynthesis.speaking && isVoiceModeActive) {
-        clearInterval(wait);
-        console.log('🎙️ Starting to listen after greeting');
-        setTimeout(() => {
-          if (isVoiceModeActive) listenForResponse();
-        }, 500);
-      }
-    }, 300);
+    setIsPushToTalkActive(false);
+    
+    // If we have a transcript, submit it
+    if (voiceTranscript.trim()) {
+      console.log('🎙️ Submitting voice transcript:', voiceTranscript.trim());
+      handleVoiceSubmission(voiceTranscript.trim());
+    } else {
+      console.log('🎙️ No transcript to submit');
+      setVoiceTranscript('');
+    }
   };
+
   // 🎙️  ────────────────────────────────────────────────────────────
 
   // Get current chat
@@ -239,6 +445,13 @@ export default function AssistantPage() {
     // Listen for storage changes
     window.addEventListener('storage', checkApiKey);
     return () => window.removeEventListener('storage', checkApiKey);
+  }, []);
+
+  // Cleanup audio on component unmount
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+    };
   }, []);
 
   const scrollToBottom = () => {
@@ -660,21 +873,9 @@ export default function AssistantPage() {
 
       updateChatWithMessage(currentChatId, aiMessage);
       
-      // 🔈 Speak the AI response aloud
-      speak(enhancedResponse);
-      
-      // If voice mode is active, wait for speech to finish then start listening again
-      if (isVoiceModeActive) {
-        console.log('🎙️ Waiting for speech to finish before listening again');
-        const waitForSpeech = setInterval(() => {
-          if (!window.speechSynthesis.speaking && isVoiceModeActive) {
-            clearInterval(waitForSpeech);
-            console.log('🎙️ Speech finished, starting to listen again');
-            setTimeout(() => {
-              if (isVoiceModeActive) listenForResponse();
-            }, 1000); // Give a moment before starting to listen again
-          }
-        }, 300);
+      // 🔈 Speak the AI response aloud only if voice response is enabled
+      if (isVoiceResponseEnabled) {
+        speak(enhancedResponse);
       }
       
     } catch (error: any) {
@@ -695,22 +896,11 @@ export default function AssistantPage() {
 
       updateChatWithMessage(currentChatId, errorAiMessage);
       
-      // 🔈 Speak the error message aloud
-      speak(errorMessage + ' Please try again or contact support.');
-      
-      // If voice mode is active, wait for speech to finish then start listening again
-      if (isVoiceModeActive) {
-        console.log('🎙️ Error occurred, waiting for speech to finish before listening again');
-        const waitForSpeech = setInterval(() => {
-          if (!window.speechSynthesis.speaking && isVoiceModeActive) {
-            clearInterval(waitForSpeech);
-            console.log('🎙️ Speech finished after error, starting to listen again');
-            setTimeout(() => {
-              if (isVoiceModeActive) listenForResponse();
-            }, 1000);
-          }
-        }, 300);
+      // 🔈 Speak the error message aloud only if voice response is enabled
+      if (isVoiceResponseEnabled) {
+        speak(errorMessage + ' Please try again or contact support.');
       }
+      
     } finally {
       setIsLoading(false);
     }
@@ -726,27 +916,8 @@ export default function AssistantPage() {
             <Sparkles className="h-6 w-6 text-blue-600" />
             AI Assistant
           </h1>
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={startVoiceChat}
-              className={`p-2 rounded-full transition-colors ${
-                isVoiceModeActive 
-                  ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
-                  : 'bg-green-600 hover:bg-green-700'
-              } text-white`}
-              title={isVoiceModeActive ? 'Stop voice conversation' : 'Start voice conversation'}
-            >
-              <Mic className="h-5 w-5" />
-            </button>
-            {isVoiceModeActive && (
-              <div className="text-sm text-green-600 font-medium">
-                🎙️ Voice Mode Active
-              </div>
-            )}
-            <div className="text-sm text-gray-500">
-              Powered by the latest AI technology in the entire galitonic universe
-            </div>
+          <div className="text-sm text-gray-500">
+            Powered by OpenAI TTS & the latest AI technology
           </div>
         </div>
 
@@ -765,7 +936,7 @@ export default function AssistantPage() {
                 </h3>
                 <div className="mt-1 text-sm text-yellow-700">
                   <p>
-                    To use the AI Assistant, you need to provide your OpenAI API key. 
+                    To use the AI Assistant with voice features, you need to provide your OpenAI API key. 
                     <a href="/settings" className="font-medium underline hover:text-yellow-800 ml-1">
                       Go to Settings
                     </a> to add your API key.
@@ -849,8 +1020,102 @@ export default function AssistantPage() {
           </button>
         </form>
         
+        {/* Voice Controls - Below Text Input */}
+        <div className="mt-3 flex items-center justify-between bg-gray-50 rounded-lg p-3 border border-gray-200">
+          <div className="flex items-center gap-3">
+            {/* Push-to-Talk Button */}
+            <button
+              type="button"
+              onMouseDown={startPushToTalk}
+              onMouseUp={stopPushToTalk}
+              onMouseLeave={stopPushToTalk}
+              onTouchStart={startPushToTalk}
+              onTouchEnd={stopPushToTalk}
+              className={`px-4 py-2 rounded-lg font-medium text-sm transition-all select-none ${
+                isPushToTalkActive 
+                  ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse shadow-lg' 
+                  : 'bg-blue-500 hover:bg-blue-600 text-white shadow-md'
+              } ${!hasApiKey ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!hasApiKey || isLoading}
+              title={isPushToTalkActive ? 'Release to send voice message' : 'Hold to speak'}
+            >
+              <div className="flex items-center gap-2">
+                <Mic className="h-4 w-4" />
+                {isPushToTalkActive ? 'Release to Send' : 'Hold to Speak'}
+              </div>
+            </button>
+
+            {/* Voice Response Toggle */}
+            <button
+              type="button"
+              onClick={() => setIsVoiceResponseEnabled(!isVoiceResponseEnabled)}
+              className={`px-3 py-2 rounded-lg font-medium text-xs transition-all ${
+                isVoiceResponseEnabled 
+                  ? 'bg-green-500 hover:bg-green-600 text-white' 
+                  : 'bg-gray-300 hover:bg-gray-400 text-gray-700'
+              } ${!hasApiKey ? 'opacity-50 cursor-not-allowed' : ''}`}
+              disabled={!hasApiKey}
+              title={isVoiceResponseEnabled ? 'AI voice responses enabled - click to disable' : 'AI voice responses disabled - click to enable'}
+            >
+              <div className="flex items-center gap-1">
+                {isVoiceResponseEnabled ? <Volume2 className="h-3 w-3" /> : <VolumeX className="h-3 w-3" />}
+                {isVoiceResponseEnabled ? 'Voice On' : 'Voice Off'}
+              </div>
+            </button>
+
+            {/* Voice Selection Dropdown */}
+            <div className="relative">
+              <select
+                value={selectedVoice}
+                onChange={(e) => setSelectedVoice(e.target.value)}
+                className="text-xs bg-white border border-gray-300 rounded-md px-2 py-1 pr-6 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                title="Select AI Voice"
+                disabled={!hasApiKey}
+              >
+                <option value="alloy">🎭 Alloy</option>
+                <option value="echo">🔔 Echo</option>
+                <option value="fable">📚 Fable</option>
+                <option value="onyx">💎 Onyx</option>
+                <option value="nova">⭐ Nova</option>
+                <option value="shimmer">✨ Shimmer</option>
+              </select>
+            </div>
+
+            {/* Speaking Indicator */}
+            {isSpeaking && (
+              <button
+                onClick={stopSpeaking}
+                className="px-3 py-1 rounded-full bg-orange-500 hover:bg-orange-600 text-white text-xs animate-pulse"
+                title="Stop speaking"
+              >
+                <div className="flex items-center gap-1">
+                  <VolumeX className="h-3 w-3" />
+                  Stop
+                </div>
+              </button>
+            )}
+          </div>
+
+          <div className="text-xs text-gray-500">
+            🎙️ Voice powered by OpenAI
+          </div>
+        </div>
+
+        {/* Real-time Voice Transcript */}
+        {voiceTranscript && (
+          <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <div className="text-xs text-blue-600 font-medium mb-1">Voice Transcript:</div>
+            <div className="text-sm text-gray-800">{voiceTranscript}</div>
+            {isPushToTalkActive && (
+              <div className="text-xs text-blue-500 mt-1 animate-pulse">Listening... Release button to send</div>
+            )}
+          </div>
+        )}
+        
         <div className="text-xs text-gray-500 mt-3 text-center">
           💡 <strong>Tip:</strong> Ask specific questions about safety, productivity, weather impacts, or schedule analysis for better insights.
+          <br />
+          🎙️ <strong>Voice:</strong> Hold the "Hold to Speak" button below to record your voice message, then release to send.
         </div>
 
         {/* Quick Action Buttons */}
