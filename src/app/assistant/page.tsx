@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles, Loader2, MessageSquare, Plus, ChevronDown, Clock } from 'lucide-react';
+import { Send, Sparkles, Loader2, MessageSquare, Plus, ChevronDown, Clock, Mic } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -28,7 +28,144 @@ export default function AssistantPage() {
   const [showChatList, setShowChatList] = useState(false);
   const [isCreatingChat, setIsCreatingChat] = useState(false);
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [isVoiceModeActive, setIsVoiceModeActive] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // 🎙️  ────────────────────────────────────────────────────────────
+  // Client‑side Speech helpers
+  // ───────────────────────────────────────────────────────────────
+  const speak = (text: string) => {
+    if (typeof window === 'undefined' || !("speechSynthesis" in window)) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1; // Normal speed
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const listenForResponse = () => {
+    if (typeof window === 'undefined' || !isVoiceModeActive) return;
+    
+    console.log('🎙️ Starting voice recognition...');
+    
+    // @ts-ignore – webkit fallback
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert('Sorry, voice recognition is not supported in this browser.');
+      setIsVoiceModeActive(false);
+      return;
+    }
+
+    // @ts-ignore – constructor
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+    recognition.continuous = false;
+
+    console.log('🎙️ Voice recognition configured, starting...');
+    
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error('Error starting recognition:', error);
+      if (isVoiceModeActive) {
+        setTimeout(() => {
+          if (isVoiceModeActive) listenForResponse();
+        }, 1000);
+      }
+      return;
+    }
+
+    recognition.onstart = () => {
+      console.log('🎙️ Voice recognition started');
+    };
+
+    recognition.onresult = (event: any) => {
+      console.log('🎙️ Voice recognition result:', event);
+      if (!isVoiceModeActive) return;
+      
+      const transcript = event.results[0][0].transcript;
+      console.log('🎙️ Transcript:', transcript);
+      
+      if (transcript && transcript.trim()) {
+        setQuery(transcript);
+        console.log('🎙️ Query set to:', transcript);
+        
+        // Submit the form after a short delay
+        setTimeout(() => {
+          if (isVoiceModeActive) {
+            console.log('🎙️ Submitting form...');
+            const form = document.querySelector('form');
+            if (form) {
+              const submitEvent = new Event('submit', { bubbles: true, cancelable: true });
+              form.dispatchEvent(submitEvent);
+            }
+          }
+        }, 500);
+      }
+    };
+
+    recognition.onerror = (event: any) => {
+      console.error('🎙️ Speech recognition error:', event.error);
+      if (isVoiceModeActive) {
+        // Try again after a short delay unless it's a critical error
+        if (event.error !== 'not-allowed' && event.error !== 'service-not-allowed') {
+          setTimeout(() => {
+            if (isVoiceModeActive) {
+              console.log('🎙️ Retrying after error...');
+              listenForResponse();
+            }
+          }, 1000);
+        } else {
+          console.log('🎙️ Critical error, stopping voice mode');
+          setIsVoiceModeActive(false);
+        }
+      }
+    };
+
+    recognition.onend = () => {
+      console.log('🎙️ Voice recognition ended');
+      // Don't automatically restart here - let the success flow handle it
+    };
+  };
+
+  const startVoiceChat = () => {
+    if (isVoiceModeActive) {
+      // Turn off voice mode
+      console.log('🎙️ Stopping voice mode');
+      setIsVoiceModeActive(false);
+      // Stop any ongoing speech
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      return;
+    }
+
+    // Turn on voice mode
+    console.log('🎙️ Starting voice mode');
+    setIsVoiceModeActive(true);
+    
+    // Check if we have API key first
+    if (!hasApiKey) {
+      alert('Please add your OpenAI API key in Settings before using voice mode.');
+      setIsVoiceModeActive(false);
+      return;
+    }
+    
+    const greeting = 'Hello! How can I help you with your construction project today? Voice mode is now active.';
+    speak(greeting);
+
+    // Wait until the greeting is finished, then start listening
+    const wait = setInterval(() => {
+      if (!window.speechSynthesis.speaking && isVoiceModeActive) {
+        clearInterval(wait);
+        console.log('🎙️ Starting to listen after greeting');
+        setTimeout(() => {
+          if (isVoiceModeActive) listenForResponse();
+        }, 500);
+      }
+    }, 300);
+  };
+  // 🎙️  ────────────────────────────────────────────────────────────
 
   // Get current chat
   const currentChat = chats.find(chat => chat.id === currentChatId);
@@ -523,6 +660,23 @@ export default function AssistantPage() {
 
       updateChatWithMessage(currentChatId, aiMessage);
       
+      // 🔈 Speak the AI response aloud
+      speak(enhancedResponse);
+      
+      // If voice mode is active, wait for speech to finish then start listening again
+      if (isVoiceModeActive) {
+        console.log('🎙️ Waiting for speech to finish before listening again');
+        const waitForSpeech = setInterval(() => {
+          if (!window.speechSynthesis.speaking && isVoiceModeActive) {
+            clearInterval(waitForSpeech);
+            console.log('🎙️ Speech finished, starting to listen again');
+            setTimeout(() => {
+              if (isVoiceModeActive) listenForResponse();
+            }, 1000); // Give a moment before starting to listen again
+          }
+        }, 300);
+      }
+      
     } catch (error: any) {
       console.error('Error fetching AI response:', error);
       let errorMessage = 'Sorry, I encountered an error processing your request.';
@@ -540,6 +694,23 @@ export default function AssistantPage() {
       };
 
       updateChatWithMessage(currentChatId, errorAiMessage);
+      
+      // 🔈 Speak the error message aloud
+      speak(errorMessage + ' Please try again or contact support.');
+      
+      // If voice mode is active, wait for speech to finish then start listening again
+      if (isVoiceModeActive) {
+        console.log('🎙️ Error occurred, waiting for speech to finish before listening again');
+        const waitForSpeech = setInterval(() => {
+          if (!window.speechSynthesis.speaking && isVoiceModeActive) {
+            clearInterval(waitForSpeech);
+            console.log('🎙️ Speech finished after error, starting to listen again');
+            setTimeout(() => {
+              if (isVoiceModeActive) listenForResponse();
+            }, 1000);
+          }
+        }, 300);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -555,8 +726,27 @@ export default function AssistantPage() {
             <Sparkles className="h-6 w-6 text-blue-600" />
             AI Assistant
           </h1>
-          <div className="text-sm text-gray-500">
-            Powered by the latest AI technology in the entire galitonic universe
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={startVoiceChat}
+              className={`p-2 rounded-full transition-colors ${
+                isVoiceModeActive 
+                  ? 'bg-red-600 hover:bg-red-700 animate-pulse' 
+                  : 'bg-green-600 hover:bg-green-700'
+              } text-white`}
+              title={isVoiceModeActive ? 'Stop voice conversation' : 'Start voice conversation'}
+            >
+              <Mic className="h-5 w-5" />
+            </button>
+            {isVoiceModeActive && (
+              <div className="text-sm text-green-600 font-medium">
+                🎙️ Voice Mode Active
+              </div>
+            )}
+            <div className="text-sm text-gray-500">
+              Powered by the latest AI technology in the entire galitonic universe
+            </div>
           </div>
         </div>
 
@@ -647,6 +837,7 @@ export default function AssistantPage() {
           />
           <button
             type="submit"
+            id="sendBtn"
             disabled={isLoading || !query.trim() || !hasApiKey}
             className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:bg-blue-400 disabled:cursor-not-allowed"
           >
