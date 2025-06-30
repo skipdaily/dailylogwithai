@@ -15,7 +15,8 @@ import {
   Mail,
   MapPin,
   FileText,
-  ArrowLeft
+  ArrowLeft,
+  Edit2
 } from 'lucide-react';
 
 interface Project {
@@ -67,6 +68,10 @@ export default function ProjectSubcontractorsPage({ params }: { params: Promise<
   const [selectedSubcontractor, setSelectedSubcontractor] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [assignedDate, setAssignedDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Edit form state
+  const [editingSubcontractor, setEditingSubcontractor] = useState<string | null>(null);
+  const [editFormData, setEditFormData] = useState<Partial<Subcontractor>>({});
 
   useEffect(() => {
     if (resolvedParams.id) {
@@ -163,7 +168,7 @@ export default function ProjectSubcontractorsPage({ params }: { params: Promise<
         .insert([{
           project_id: resolvedParams.id,
           subcontractor_id: selectedSubcontractor,
-          status: 'active',
+          status: 'awarded',
           assigned_date: assignedDate,
           notes: assignmentNotes.trim() || null
         }]);
@@ -223,9 +228,57 @@ export default function ProjectSubcontractorsPage({ params }: { params: Promise<
     }
   };
 
+  const handleEditSubcontractor = (subcontractor: Subcontractor) => {
+    setEditingSubcontractor(subcontractor.id);
+    setEditFormData(subcontractor);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editingSubcontractor) return;
+    
+    setSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const { error } = await supabase
+        .from('subcontractors')
+        .update({
+          name: editFormData.name,
+          contact_person: editFormData.contact_person,
+          contact_email: editFormData.contact_email,
+          contact_phone: editFormData.contact_phone,
+          specialty: editFormData.specialty,
+          address: editFormData.address,
+          license_number: editFormData.license_number,
+          insurance_info: editFormData.insurance_info,
+          notes: editFormData.notes
+        })
+        .eq('id', editingSubcontractor);
+
+      if (error) throw error;
+
+      setSuccess('Subcontractor updated successfully!');
+      setEditingSubcontractor(null);
+      setEditFormData({});
+      fetchProjectSubcontractors();
+
+    } catch (error: any) {
+      console.error('Error updating subcontractor:', error);
+      setError(error.message || 'Failed to update subcontractor');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setEditingSubcontractor(null);
+    setEditFormData({});
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active':
+      case 'awarded':
         return 'bg-green-100 text-green-800';
       case 'inactive':
         return 'bg-gray-100 text-gray-800';
@@ -434,67 +487,166 @@ export default function ProjectSubcontractorsPage({ params }: { params: Promise<
               <div key={ps.id} className="p-6 hover:bg-gray-50">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-2">
-                      <h3 className="text-lg font-medium text-gray-900">
-                        {ps.subcontractors.name}
-                      </h3>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(ps.status)}`}>
-                        {ps.status}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm text-gray-600">
-                      {ps.subcontractors.specialty && (
-                        <div className="flex items-center gap-2">
-                          <FileText className="h-4 w-4" />
-                          <span>{ps.subcontractors.specialty}</span>
+                    {editingSubcontractor === ps.subcontractors.id ? (
+                      // Edit Form
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
+                            <input
+                              type="text"
+                              value={editFormData.name || ''}
+                              onChange={(e) => setEditFormData({...editFormData, name: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Specialty</label>
+                            <input
+                              type="text"
+                              value={editFormData.specialty || ''}
+                              onChange={(e) => setEditFormData({...editFormData, specialty: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Contact Person</label>
+                            <input
+                              type="text"
+                              value={editFormData.contact_person || ''}
+                              onChange={(e) => setEditFormData({...editFormData, contact_person: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                            <input
+                              type="email"
+                              value={editFormData.contact_email || ''}
+                              onChange={(e) => setEditFormData({...editFormData, contact_email: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                            <input
+                              type="tel"
+                              value={editFormData.contact_phone || ''}
+                              onChange={(e) => setEditFormData({...editFormData, contact_phone: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">License Number</label>
+                            <input
+                              type="text"
+                              value={editFormData.license_number || ''}
+                              onChange={(e) => setEditFormData({...editFormData, license_number: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
                         </div>
-                      )}
-                      
-                      {ps.subcontractors.contact_person && (
-                        <div className="flex items-center gap-2">
-                          <span>Contact: {ps.subcontractors.contact_person}</span>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                          <textarea
+                            value={editFormData.address || ''}
+                            onChange={(e) => setEditFormData({...editFormData, address: e.target.value})}
+                            rows={2}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                          />
                         </div>
-                      )}
-
-                      {ps.subcontractors.contact_email && (
-                        <div className="flex items-center gap-2">
-                          <Mail className="h-4 w-4" />
-                          <a href={`mailto:${ps.subcontractors.contact_email}`} className="text-blue-600 hover:underline">
-                            {ps.subcontractors.contact_email}
-                          </a>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={handleSaveEdit}
+                            disabled={saving}
+                            className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors disabled:opacity-50"
+                          >
+                            {saving ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
+                          >
+                            Cancel
+                          </button>
                         </div>
-                      )}
-
-                      {ps.subcontractors.contact_phone && (
-                        <div className="flex items-center gap-2">
-                          <Phone className="h-4 w-4" />
-                          <a href={`tel:${ps.subcontractors.contact_phone}`} className="text-blue-600 hover:underline">
-                            {ps.subcontractors.contact_phone}
-                          </a>
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4" />
-                        <span>Assigned: {new Date(ps.assigned_date).toLocaleDateString()}</span>
                       </div>
-                    </div>
+                    ) : (
+                      // Display View
+                      <>
+                        <div className="flex items-center gap-3 mb-2">
+                          <h3 className="text-lg font-medium text-gray-900">
+                            {ps.subcontractors.name}
+                          </h3>
+                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(ps.status)}`}>
+                            {ps.status}
+                          </span>
+                        </div>
 
-                    {ps.notes && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-md">
-                        <p className="text-sm text-gray-700">{ps.notes}</p>
-                      </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 text-sm text-gray-600">
+                          {ps.subcontractors.specialty && (
+                            <div className="flex items-center gap-2">
+                              <FileText className="h-4 w-4" />
+                              <span>{ps.subcontractors.specialty}</span>
+                            </div>
+                          )}
+                          
+                          {ps.subcontractors.contact_person && (
+                            <div className="flex items-center gap-2">
+                              <span>Contact: {ps.subcontractors.contact_person}</span>
+                            </div>
+                          )}
+
+                          {ps.subcontractors.contact_email && (
+                            <div className="flex items-center gap-2">
+                              <Mail className="h-4 w-4" />
+                              <a href={`mailto:${ps.subcontractors.contact_email}`} className="text-blue-600 hover:underline">
+                                {ps.subcontractors.contact_email}
+                              </a>
+                            </div>
+                          )}
+
+                          {ps.subcontractors.contact_phone && (
+                            <div className="flex items-center gap-2">
+                              <Phone className="h-4 w-4" />
+                              <a href={`tel:${ps.subcontractors.contact_phone}`} className="text-blue-600 hover:underline">
+                                {ps.subcontractors.contact_phone}
+                              </a>
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2">
+                            <Calendar className="h-4 w-4" />
+                            <span>Assigned: {new Date(ps.assigned_date).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+
+                        {ps.notes && (
+                          <div className="mt-3 p-3 bg-gray-50 rounded-md">
+                            <p className="text-sm text-gray-700">{ps.notes}</p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
 
                   <div className="flex items-center gap-2 ml-4">
+                    {editingSubcontractor !== ps.subcontractors.id && (
+                      <button
+                        onClick={() => handleEditSubcontractor(ps.subcontractors)}
+                        className="text-blue-600 hover:text-blue-800 p-1"
+                        title="Edit subcontractor"
+                      >
+                        <Edit2 className="h-4 w-4" />
+                      </button>
+                    )}
+                    
                     <select
                       value={ps.status}
                       onChange={(e) => handleStatusChange(ps.id, e.target.value)}
                       className="text-sm border border-gray-300 rounded-md px-2 py-1"
                     >
-                      <option value="active">Active</option>
+                      <option value="awarded">Awarded</option>
                       <option value="inactive">Inactive</option>
                       <option value="completed">Completed</option>
                     </select>

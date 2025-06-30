@@ -77,6 +77,14 @@ export default function ProjectOverviewPage({ params }: { params: Promise<{ id: 
   const [selectedSubcontractor, setSelectedSubcontractor] = useState('');
   const [assignmentNotes, setAssignmentNotes] = useState('');
   const [assignedDate, setAssignedDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  // Edit form state
+  const [editingSubcontractor, setEditingSubcontractor] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    notes: '',
+    assigned_date: '',
+    status: ''
+  });
 
   useEffect(() => {
     if (resolvedParams.id) {
@@ -174,7 +182,7 @@ export default function ProjectOverviewPage({ params }: { params: Promise<{ id: 
         .insert([{
           project_id: resolvedParams.id,
           subcontractor_id: selectedSubcontractor,
-          status: 'active',
+          status: 'awarded',
           assigned_date: assignedDate,
           notes: assignmentNotes.trim() || null
         }]);
@@ -234,9 +242,55 @@ export default function ProjectOverviewPage({ params }: { params: Promise<{ id: 
     }
   };
 
+  const handleStartEdit = (ps: ProjectSubcontractor) => {
+    setEditingSubcontractor(ps.id);
+    setEditForm({
+      notes: ps.notes || '',
+      assigned_date: ps.assigned_date.split('T')[0],
+      status: ps.status
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingSubcontractor(null);
+    setEditForm({
+      notes: '',
+      assigned_date: '',
+      status: ''
+    });
+  };
+
+  const handleSaveEdit = async (projectSubcontractorId: string) => {
+    setSaving(true);
+    setError('');
+    setSuccess('');
+
+    try {
+      const { error } = await supabase
+        .from('project_subcontractors')
+        .update({
+          notes: editForm.notes.trim() || null,
+          assigned_date: editForm.assigned_date,
+          status: editForm.status
+        })
+        .eq('id', projectSubcontractorId);
+
+      if (error) throw error;
+
+      setSuccess('Subcontractor updated successfully!');
+      setEditingSubcontractor(null);
+      fetchProjectSubcontractors();
+    } catch (error: any) {
+      console.error('Error updating subcontractor:', error);
+      setError(error.message || 'Failed to update subcontractor');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active':
+      case 'awarded':
         return 'bg-green-100 text-green-800';
       case 'inactive':
         return 'bg-gray-100 text-gray-800';
@@ -407,10 +461,10 @@ export default function ProjectOverviewPage({ params }: { params: Promise<{ id: 
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <CheckCircle className="h-5 w-5 text-green-500" />
-                <span className="text-gray-600">Active Subs</span>
+                <span className="text-gray-600">Awarded Subs</span>
               </div>
               <span className="text-2xl font-bold text-gray-900">
-                {projectSubcontractors.filter(ps => ps.status === 'active').length}
+                {projectSubcontractors.filter(ps => ps.status === 'awarded').length}
               </span>
             </div>
 
@@ -602,23 +656,98 @@ export default function ProjectOverviewPage({ params }: { params: Promise<{ id: 
                       </div>
                     </div>
 
-                    {ps.notes && (
-                      <div className="mt-3 p-3 bg-gray-50 rounded-md">
-                        <p className="text-sm text-gray-700">{ps.notes}</p>
+                    {/* Edit Form */}
+                    {editingSubcontractor === ps.id ? (
+                      <div className="mt-4 p-4 bg-gray-50 rounded-md">
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Status
+                            </label>
+                            <select
+                              value={editForm.status}
+                              onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            >
+                              <option value="awarded">Awarded</option>
+                              <option value="inactive">Inactive</option>
+                              <option value="completed">Completed</option>
+                            </select>
+                          </div>
+                          
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Assignment Date
+                            </label>
+                            <input
+                              type="date"
+                              value={editForm.assigned_date}
+                              onChange={(e) => setEditForm({ ...editForm, assigned_date: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                            />
+                          </div>
+                          
+                          <div className="md:col-span-1">
+                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                              Notes
+                            </label>
+                            <input
+                              type="text"
+                              value={editForm.notes}
+                              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Assignment notes..."
+                            />
+                          </div>
+                        </div>
+                        
+                        <div className="flex gap-2 mt-4">
+                          <button
+                            onClick={() => handleSaveEdit(ps.id)}
+                            disabled={saving}
+                            className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-md hover:bg-green-700 transition-colors disabled:opacity-50"
+                          >
+                            {saving ? 'Saving...' : 'Save'}
+                          </button>
+                          <button
+                            onClick={handleCancelEdit}
+                            className="px-3 py-1.5 bg-gray-500 text-white text-sm rounded-md hover:bg-gray-600 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                        </div>
                       </div>
+                    ) : (
+                      ps.notes && (
+                        <div className="mt-3 p-3 bg-gray-50 rounded-md">
+                          <p className="text-sm text-gray-700">{ps.notes}</p>
+                        </div>
+                      )
                     )}
                   </div>
 
                   <div className="flex items-center gap-2 ml-4">
-                    <select
-                      value={ps.status}
-                      onChange={(e) => handleStatusChange(ps.id, e.target.value)}
-                      className="text-sm border border-gray-300 rounded-md px-2 py-1"
-                    >
-                      <option value="active">Active</option>
-                      <option value="inactive">Inactive</option>
-                      <option value="completed">Completed</option>
-                    </select>
+                    {editingSubcontractor !== ps.id && (
+                      <>
+                        <button
+                          onClick={() => handleStartEdit(ps)}
+                          className="text-blue-600 hover:text-blue-800 p-1"
+                          title="Edit assignment"
+                        >
+                          <Edit className="h-4 w-4" />
+                        </button>
+                        
+                        <select
+                          value={ps.status}
+                          onChange={(e) => handleStatusChange(ps.id, e.target.value)}
+                          className="text-sm border border-gray-300 rounded-md px-2 py-1"
+                        >
+                          <option value="awarded">Awarded</option>
+                          <option value="inactive">Inactive</option>
+                          <option value="completed">Completed</option>
+                        </select>
+                      </>
+                    )}
                     
                     <button
                       onClick={() => handleRemoveSubcontractor(ps.id)}
