@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import { Building2, PlusCircle, Edit, Trash2, AlertCircle, Calendar, MapPin, User, Users, Eye } from 'lucide-react';
+import { Building2, PlusCircle, Edit, Trash2, AlertCircle, Calendar, MapPin, User, Users, Eye, BarChart3 } from 'lucide-react';
 
 interface Project {
   id: string;
@@ -384,6 +384,13 @@ export default function ProjectsPage() {
                           title="View project overview"
                         >
                           <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => router.push(`/projects/${project.id}/gantt`)}
+                          className="text-purple-600 hover:text-purple-900"
+                          title="View Gantt chart"
+                        >
+                          <BarChart3 className="h-4 w-4" />
                         </button>
                         <button
                           onClick={() => handleEdit(project)}

@@ -19,7 +19,8 @@ import {
   Edit,
   User,
   Clock,
-  Briefcase
+  Briefcase,
+  BarChart3
 } from 'lucide-react';
 
 interface Project {
@@ -364,13 +365,22 @@ export default function ProjectOverviewPage({ params }: { params: Promise<{ id: 
               </span>
             </div>
           </div>
-          <button
-            onClick={() => router.push(`/projects/${project.id}/edit`)}
-            className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
-          >
-            <Edit className="h-4 w-4" />
-            Edit Project
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => router.push(`/projects/${project.id}/gantt`)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            >
+              <BarChart3 className="h-4 w-4" />
+              Gantt Chart
+            </button>
+            <button
+              onClick={() => router.push(`/projects/${project.id}/edit`)}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 transition-colors"
+            >
+              <Edit className="h-4 w-4" />
+              Edit Project
+            </button>
+          </div>
         </div>
       </div>
 
