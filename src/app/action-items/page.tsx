@@ -15,7 +15,7 @@ interface ActionItem {
   project_id?: string;
   assigned_to?: string;
   priority: 'low' | 'medium' | 'high' | 'urgent';
-  status: 'open' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'open' | 'in_progress' | 'completed' | 'cancelled' | 'needs_action';
   due_date?: string;
   created_by?: string;
   created_at?: string;
@@ -110,7 +110,7 @@ function ActionItemsContent() {
     project_id: '',
     assigned_to: '',
     priority: 'medium' as 'low' | 'medium' | 'high' | 'urgent',
-    status: 'open' as 'open' | 'in_progress' | 'completed' | 'cancelled',
+    status: 'open' as 'open' | 'in_progress' | 'completed' | 'cancelled' | 'needs_action',
     due_date: '',
     created_by: 'Thomas Gould' // Default, could be made dynamic
   });
@@ -504,6 +504,7 @@ function ActionItemsContent() {
     switch (status) {
       case 'completed': return 'text-green-600 bg-green-100';
       case 'in_progress': return 'text-blue-600 bg-blue-100';
+      case 'needs_action': return 'text-red-600 bg-red-100';
       case 'cancelled': return 'text-red-600 bg-red-100';
       case 'open': return 'text-gray-600 bg-gray-100';
       default: return 'text-gray-600 bg-gray-100';
@@ -514,6 +515,7 @@ function ActionItemsContent() {
     switch (status) {
       case 'completed': return <CheckCircle className="w-4 h-4" />;
       case 'in_progress': return <Clock className="w-4 h-4" />;
+      case 'needs_action': return <AlertTriangle className="w-4 h-4" />;
       case 'cancelled': return <AlertCircle className="w-4 h-4" />;
       default: return <FileText className="w-4 h-4" />;
     }
@@ -608,7 +610,7 @@ function ActionItemsContent() {
         break;
       case 'status':
         // Define status order for sorting
-        const statusOrder = { 'open': 1, 'in_progress': 2, 'completed': 3, 'cancelled': 4 };
+        const statusOrder = { 'open': 1, 'needs_action': 2, 'in_progress': 3, 'completed': 4, 'cancelled': 5 };
         aValue = statusOrder[a.status];
         bValue = statusOrder[b.status];
         break;
@@ -628,6 +630,7 @@ function ActionItemsContent() {
   });
 
   const openItems = filteredItems.filter(item => item.status === 'open').length;
+  const needsActionItems = filteredItems.filter(item => item.status === 'needs_action').length;
   const inProgressItems = filteredItems.filter(item => item.status === 'in_progress').length;
   const completedItems = filteredItems.filter(item => item.status === 'completed').length;
 
@@ -654,6 +657,10 @@ function ActionItemsContent() {
                 <span className="flex items-center gap-1">
                   <FileText className="w-4 h-4" />
                   {openItems} Open
+                </span>
+                <span className="flex items-center gap-1">
+                  <AlertTriangle className="w-4 h-4 text-red-600" />
+                  {needsActionItems} Needs Action
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock className="w-4 h-4 text-blue-600" />
@@ -738,6 +745,7 @@ function ActionItemsContent() {
               >
                 <option value="">All Status</option>
                 <option value="open">Open</option>
+                <option value="needs_action">Needs Action</option>
                 <option value="in_progress">In Progress</option>
                 <option value="completed">Completed</option>
                 <option value="cancelled">Cancelled</option>
@@ -885,6 +893,7 @@ function ActionItemsContent() {
                             className={`text-xs rounded-full px-2 py-1 border-0 font-medium capitalize ${getStatusColor(item.status)} cursor-pointer`}
                           >
                             <option value="open">Open</option>
+                            <option value="needs_action">Needs Action</option>
                             <option value="in_progress">In Progress</option>
                             <option value="completed">Completed</option>
                             <option value="cancelled">Cancelled</option>
@@ -1097,6 +1106,7 @@ function ActionItemsContent() {
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     >
                       <option value="open">Open</option>
+                      <option value="needs_action">Needs Action</option>
                       <option value="in_progress">In Progress</option>
                       <option value="completed">Completed</option>
                       <option value="cancelled">Cancelled</option>

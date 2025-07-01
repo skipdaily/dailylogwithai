@@ -125,26 +125,35 @@ export async function POST(request: NextRequest) {
       doc.setFontSize(11);
       doc.setFont('helvetica', 'normal');
       
-      if (items && items.length > 0 && items.some((item: any) => item.text?.trim())) {
+      if (items && items.length > 0) {
+        // Filter out empty items
         const filteredItems = items.filter((item: any) => item.text?.trim());
         
-        filteredItems.forEach((item: any, index: number) => {
-          checkPageBreak(15);
-          
-          // Add bullet point
-          doc.text('•', margin + 5, currentY);
-          
-          // Clean and add the text with proper wrapping
-          const cleanedText = item.text
-            .replace(/\r\n/g, ' ')
-            .replace(/\n/g, ' ')
-            .replace(/\r/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-          
-          currentY = addText(cleanedText, margin + 15, currentY, pageWidth - 2 * margin - 15);
-          currentY += 1; // Add some space between bullet points
-        });
+        if (filteredItems.length > 0) {
+          // Process each item as a separate bullet point
+          filteredItems.forEach((item: any, index: number) => {
+            checkPageBreak(15);
+            
+            // Add bullet point
+            doc.text('•', margin + 5, currentY);
+            
+            // Clean the text but keep each item separate
+            const cleanedText = (item.text || '')
+              .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
+              .trim();
+            
+            // Add the text next to the bullet point
+            const textStartY = currentY;
+            currentY = addText(cleanedText, margin + 15, textStartY, pageWidth - 2 * margin - 15);
+            
+            // Add spacing between bullet points
+            currentY += 4;
+          });
+        } else {
+          doc.setFont('helvetica', 'italic');
+          currentY = addText('No items recorded', margin + 5, currentY, pageWidth - 2 * margin - 5);
+          doc.setFont('helvetica', 'normal');
+        }
       } else {
         doc.setFont('helvetica', 'italic');
         currentY = addText('No items recorded', margin + 5, currentY, pageWidth - 2 * margin - 5);
