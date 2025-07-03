@@ -86,6 +86,7 @@ function ActionItemsContent() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
+  const [filterSourceType, setFilterSourceType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [filterPriority, setFilterPriority] = useState('');
   const [filterProject, setFilterProject] = useState('');
@@ -100,7 +101,7 @@ function ActionItemsContent() {
   const [itemNotesCache, setItemNotesCache] = useState<{ [key: string]: ActionItemNote[] }>({});
   
   // Add sorting state
-  const [sortColumn, setSortColumn] = useState<'priority' | 'status' | 'assigned_to' | null>(null);
+  const [sortColumn, setSortColumn] = useState<'source_type' | 'priority' | 'status' | 'assigned_to' | null>(null);
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const [formData, setFormData] = useState({
@@ -459,7 +460,7 @@ function ActionItemsContent() {
   };
 
   // Add sorting functions
-  const handleSort = (column: 'priority' | 'status' | 'assigned_to') => {
+  const handleSort = (column: 'source_type' | 'priority' | 'status' | 'assigned_to') => {
     if (sortColumn === column) {
       // Same column, toggle direction
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -470,7 +471,7 @@ function ActionItemsContent() {
     }
   };
 
-  const getSortIcon = (column: 'priority' | 'status' | 'assigned_to') => {
+  const getSortIcon = (column: 'source_type' | 'priority' | 'status' | 'assigned_to') => {
     if (sortColumn !== column) {
       return <span className="text-gray-300">↕</span>;
     }
@@ -533,6 +534,7 @@ function ActionItemsContent() {
         actionItems: filteredItems,
         filters: {
           searchTerm,
+          filterSourceType,
           filterStatus,
           filterPriority,
           filterProject,
@@ -588,13 +590,14 @@ function ActionItemsContent() {
     const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.description && item.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (item.assigned_to && item.assigned_to.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesSourceType = !filterSourceType || item.source_type === filterSourceType;
     const matchesStatus = !filterStatus || item.status === filterStatus;
     const matchesPriority = !filterPriority || item.priority === filterPriority;
     const matchesProject = !filterProject || item.project_id === filterProject;
     // Show completed items if showCompleted is true OR if explicitly filtering for completed status
     const matchesCompletedFilter = showCompleted || filterStatus === 'completed' || item.status !== 'completed';
 
-    return matchesSearch && matchesStatus && matchesPriority && matchesProject && matchesCompletedFilter;
+    return matchesSearch && matchesSourceType && matchesStatus && matchesPriority && matchesProject && matchesCompletedFilter;
   }).sort((a, b) => {
     if (!sortColumn) return 0;
 
@@ -602,6 +605,12 @@ function ActionItemsContent() {
     let bValue: string | number;
 
     switch (sortColumn) {
+      case 'source_type':
+        // Define source type order for sorting
+        const sourceTypeOrder = { 'action_item': 1, 'meeting': 2, 'observation': 3, 'out_of_scope': 4 };
+        aValue = sourceTypeOrder[a.source_type];
+        bValue = sourceTypeOrder[b.source_type];
+        break;
       case 'priority':
         // Define priority order for sorting
         const priorityOrder = { 'urgent': 4, 'high': 3, 'medium': 2, 'low': 1 };
@@ -739,16 +748,15 @@ function ActionItemsContent() {
             {/* Compact filter controls */}
             <div className="flex gap-2 flex-wrap lg:flex-nowrap">
               <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
+                value={filterSourceType}
+                onChange={(e) => setFilterSourceType(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm min-w-0"
               >
-                <option value="">All Status</option>
-                <option value="open">Open</option>
-                <option value="needs_action">Needs Action</option>
-                <option value="in_progress">In Progress</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
+                <option value="">All Sources</option>
+                <option value="action_item">Action Item</option>
+                <option value="meeting">Meeting</option>
+                <option value="observation">Observation</option>
+                <option value="out_of_scope">Out of Scope</option>
               </select>
 
               <select
@@ -764,6 +772,19 @@ function ActionItemsContent() {
               </select>
 
               <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm min-w-0"
+              >
+                <option value="">All Status</option>
+                <option value="open">Open</option>
+                <option value="needs_action">Needs Action</option>
+                <option value="in_progress">In Progress</option>
+                <option value="completed">Completed</option>
+                <option value="cancelled">Cancelled</option>
+              </select>
+
+              <select
                 value={filterProject}
                 onChange={(e) => setFilterProject(e.target.value)}
                 className="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm min-w-0"
@@ -774,10 +795,11 @@ function ActionItemsContent() {
                 ))}
               </select>
 
-              {(searchTerm || filterStatus || filterPriority || filterProject) && (
+              {(searchTerm || filterSourceType || filterStatus || filterPriority || filterProject) && (
                 <button
                   onClick={() => {
                     setSearchTerm('');
+                    setFilterSourceType('');
                     setFilterStatus('');
                     setFilterPriority('');
                     setFilterProject('');
@@ -798,7 +820,7 @@ function ActionItemsContent() {
               <FileText className="w-12 h-12 text-gray-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium text-gray-900 mb-2">No action items found</h3>
               <p className="text-gray-600 mb-4">
-                {searchTerm || filterStatus || filterPriority || filterProject 
+                {searchTerm || filterSourceType || filterStatus || filterPriority || filterProject 
                   ? "Try adjusting your filters or search terms"
                   : "Get started by creating your first action item"
                 }
@@ -816,6 +838,15 @@ function ActionItemsContent() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Title</th>
+                    <th 
+                      className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+                      onClick={() => handleSort('source_type')}
+                    >
+                      <div className="flex items-center gap-1">
+                        Source
+                        {getSortIcon('source_type')}
+                      </div>
+                    </th>
                     <th 
                       className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
                       onClick={() => handleSort('priority')}
@@ -864,22 +895,21 @@ function ActionItemsContent() {
                                 <div className="text-sm font-medium text-gray-900 truncate">
                                   {item.title}
                                 </div>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-xs text-gray-500 capitalize">
-                                    {item.source_type.replace('_', ' ')}
-                                  </span>
-                                  {item.projects?.name && (
-                                    <>
-                                      <span className="text-gray-300">•</span>
-                                      <span className="text-xs text-gray-500 truncate">
-                                        {item.projects.name}
-                                      </span>
-                                    </>
-                                  )}
-                                </div>
+                                {item.projects?.name && (
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-xs text-gray-500 truncate">
+                                      {item.projects.name}
+                                    </span>
+                                  </div>
+                                )}
                               </div>
                             </div>
                           </div>
+                        </td>
+                        <td className="px-3 py-3">
+                          <span className="text-xs text-gray-600 capitalize">
+                            {item.source_type.replace('_', ' ')}
+                          </span>
                         </td>
                         <td className="px-3 py-3">
                           <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium capitalize ${getPriorityColor(item.priority)}`}>
@@ -939,7 +969,7 @@ function ActionItemsContent() {
                       {/* Expandable Details Section */}
                       {expandedItems.has(item.id) && (
                         <tr>
-                          <td colSpan={6} className="px-4 py-4 bg-gray-50 border-t border-gray-100">
+                          <td colSpan={7} className="px-4 py-4 bg-gray-50 border-t border-gray-100">
                             <div className="ml-6 space-y-4">
                               {/* Description */}
                               {item.description && (
