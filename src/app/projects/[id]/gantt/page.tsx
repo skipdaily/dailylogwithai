@@ -1,12 +1,10 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
-import { Gantt, Task, EventOption, StylingOption, ViewMode, DisplayOption } from 'gantt-task-react';
-import { ArrowLeft, Plus, Save, Calendar, BarChart3, RefreshCw, Edit, Trash2 } from 'lucide-react';
-import "gantt-task-react/dist/index.css";
+import { ChevronLeft, ChevronRight, Plus, Trash2, Link as LinkIcon, ArrowLeft, BarChart3, RefreshCw } from 'lucide-react';
 
 interface ProjectTask {
   id: string;
@@ -47,65 +45,46 @@ interface CrewMember {
   role?: string;
 }
 
+// Custom task interface for the Gantt chart
+interface GanttTask {
+  id: number;
+  name: string;
+  startDate: string;
+  duration: number;
+  dependencies: number[];
+  databaseId?: string; // Original database ID for operations
+}
+
 export default function ProjectGanttPage() {
   const params = useParams();
   const router = useRouter();
   const projectId = params.id as string;
 
   const [project, setProject] = useState<Project | null>(null);
-  const [tasks, setTasks] = useState<ProjectTask[]>([]);
-  const [ganttTasks, setGanttTasks] = useState<Task[]>([]);
-  const [contractors, setContractors] = useState<Contractor[]>([]);
-  const [crewMembers, setCrewMembers] = useState<CrewMember[]>([]);
+  const [tasks, setTasks] = useState<GanttTask[]>([]);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
-  const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Month);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [editingTask, setEditingTask] = useState<ProjectTask | null>(null);
-  
-  // Form state for adding new tasks
-  const [taskForm, setTaskForm] = useState({
-    name: '',
-    start_date: '',
-    end_date: '',
-    progress: 0,
-    type: 'task' as 'task' | 'milestone' | 'project',
-    assigned_to: '',
-    notes: '',
-    color: '#3B82F6'
-  });
+
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [draggedTask, setDraggedTask] = useState<GanttTask | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectionFrom, setConnectionFrom] = useState<number | null>(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const chartRef = useRef<HTMLDivElement>(null);
+
+  const dayWidth = 30;
+  const rowHeight = 50;
+  const leftPanelWidth = 200;
+  const headerHeight = 80;
 
   useEffect(() => {
     if (projectId) {
       fetchProjectData();
       fetchTasks();
-      fetchContractors();
-      fetchCrewMembers();
     }
   }, [projectId]);
-
-  useEffect(() => {
-    // Convert project tasks to Gantt chart format
-    const convertedTasks: Task[] = tasks.map((task, index) => ({
-      start: new Date(task.start_date),
-      end: new Date(task.end_date),
-      name: task.name,
-      id: task.id,
-      type: task.type === 'milestone' ? 'milestone' : 'task',
-      progress: task.progress,
-      isDisabled: false,
-      styles: task.color ? { 
-        backgroundColor: task.color,
-        backgroundSelectedColor: task.color,
-        progressColor: '#ffffff',
-        progressSelectedColor: '#ffffff'
-      } : undefined
-    }));
-
-    setGanttTasks(convertedTasks);
-  }, [tasks]);
 
   const fetchProjectData = async () => {
     try {
@@ -133,7 +112,33 @@ export default function ProjectGanttPage() {
         .order('start_date', { ascending: true });
 
       if (error) throw error;
-      setTasks(data || []);
+      
+      // Convert database tasks to Gantt format
+      const ganttTasks = (data || []).map((task, index) => {
+        const startDate = new Date(task.start_date);
+        const endDate = new Date(task.end_date);
+        const duration = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        // Ensure ID is a number and handle string UUIDs by using index + 1 as fallback
+        let taskId: number;
+        if (typeof task.id === 'string' && !isNaN(parseInt(task.id))) {
+          taskId = parseInt(task.id);
+        } else {
+          // For UUID strings, create a consistent numeric ID based on index
+          taskId = index + 1;
+        }
+        
+        return {
+          id: taskId,
+          name: task.name,
+          startDate: task.start_date,
+          duration: duration || 1,
+          dependencies: task.dependencies || [],
+          databaseId: task.id // Keep original ID for database operations
+        };
+      });
+
+      setTasks(ganttTasks);
     } catch (error: any) {
       console.error('Error fetching tasks:', error);
       setError(error.message || 'Failed to fetch project tasks');
@@ -142,203 +147,431 @@ export default function ProjectGanttPage() {
     }
   };
 
-  const fetchContractors = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('subcontractors')
-        .select('id, name, specialty, contact_person, email, phone')
-        .eq('is_active', true)
-        .order('name');
+  // Calculate date range
+  const getDateRange = () => {
+    if (tasks.length === 0) {
+      const today = new Date();
+      return {
+        minDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() - 7),
+        maxDate: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 30)
+      };
+    }
 
-      if (error) throw error;
-      setContractors(data || []);
-    } catch (error: any) {
-      console.error('Error fetching contractors:', error);
+    const dates = tasks.flatMap(task => {
+      const start = new Date(task.startDate);
+      const end = new Date(start);
+      end.setDate(end.getDate() + task.duration);
+      return [start.getTime(), end.getTime()];
+    });
+    const minDate = new Date(Math.min(...dates));
+    const maxDate = new Date(Math.max(...dates));
+    
+    // Add buffer
+    minDate.setDate(minDate.getDate() - 7);
+    maxDate.setDate(maxDate.getDate() + 14);
+    
+    return { minDate, maxDate };
+  };
+
+  const { minDate, maxDate } = getDateRange();
+
+  // Generate date headers
+  const generateDateHeaders = () => {
+    const headers = [];
+    const current = new Date(minDate);
+    while (current <= maxDate) {
+      headers.push(new Date(current));
+      current.setDate(current.getDate() + 1);
+    }
+    return headers;
+  };
+
+  const dateHeaders = generateDateHeaders();
+
+  // Calculate task position
+  const getTaskPosition = (task: GanttTask) => {
+    const startDate = new Date(task.startDate);
+    const daysDiff = Math.floor((startDate.getTime() - minDate.getTime()) / (1000 * 60 * 60 * 24));
+    return {
+      x: daysDiff * dayWidth,
+      width: task.duration * dayWidth
+    };
+  };
+
+  // Update dependent tasks when a task changes
+  const updateDependentTasks = (updatedTask: GanttTask, allTasks: GanttTask[]) => {
+    const updatedTasks = [...allTasks];
+    const taskIndex = updatedTasks.findIndex(t => t.id === updatedTask.id);
+    updatedTasks[taskIndex] = updatedTask;
+
+    const updateTask = (taskId: number) => {
+      const task = updatedTasks.find(t => t.id === taskId);
+      if (!task) return;
+
+      // Find latest end date of dependencies
+      let latestEndDate: Date | null = null;
+      task.dependencies.forEach(depId => {
+        const depTask = updatedTasks.find(t => t.id === depId);
+        if (depTask) {
+          const depEndDate = new Date(depTask.startDate);
+          depEndDate.setDate(depEndDate.getDate() + depTask.duration);
+          if (!latestEndDate || depEndDate > latestEndDate) {
+            latestEndDate = depEndDate;
+          }
+        }
+      });
+
+      if (latestEndDate) {
+        const newStartDate = new Date(latestEndDate);
+        const oldStartDate = new Date(task.startDate);
+        
+        if (newStartDate.getTime() !== oldStartDate.getTime()) {
+          task.startDate = newStartDate.toISOString().split('T')[0];
+          
+          // Update tasks that depend on this task
+          updatedTasks.forEach(t => {
+            if (t.dependencies.includes(task.id)) {
+              updateTask(t.id);
+            }
+          });
+        }
+      }
+    };
+
+    // Update all tasks that depend on the changed task
+    updatedTasks.forEach(task => {
+      if (task.dependencies.includes(updatedTask.id)) {
+        updateTask(task.id);
+      }
+    });
+
+    return updatedTasks;
+  };
+
+  // Handle task drag
+  const handleTaskMouseDown = (e: React.MouseEvent, task: GanttTask) => {
+    if (isConnecting) return;
+    
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    
+    setDraggedTask(task);
+    setDragOffset({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top
+    });
+  };
+
+  const handleMouseMove = (e: MouseEvent) => {
+    if (isConnecting && chartRef.current) {
+      const rect = chartRef.current.getBoundingClientRect();
+      setMousePos({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      });
+    }
+
+    if (draggedTask && chartRef.current) {
+      const rect = chartRef.current.getBoundingClientRect();
+      const x = e.clientX - rect.left - dragOffset.x;
+      
+      // Snap to grid
+      const snappedX = Math.round(x / dayWidth) * dayWidth;
+      const daysDiff = Math.round(snappedX / dayWidth);
+      
+      const newStartDate = new Date(minDate);
+      newStartDate.setDate(newStartDate.getDate() + daysDiff);
+      
+      const updatedTask = {
+        ...draggedTask,
+        startDate: newStartDate.toISOString().split('T')[0]
+      };
+      
+      const newTasks = updateDependentTasks(updatedTask, tasks);
+      setTasks(newTasks);
+      setDraggedTask(updatedTask);
     }
   };
 
-  const fetchCrewMembers = async () => {
-    try {
-      const { data, error } = await supabase
-        .from('crew_members')
-        .select('id, name, role')
-        .order('name');
-
-      if (error) throw error;
-      setCrewMembers(data || []);
-    } catch (error: any) {
-      console.error('Error fetching crew members:', error);
+  const handleMouseUp = () => {
+    // If we were dragging a task, save the changes to the database
+    if (draggedTask) {
+      saveDraggedTaskToDatabase(draggedTask);
     }
+    setDraggedTask(null);
+    setDragOffset({ x: 0, y: 0 });
   };
 
-  const handleTaskChange = async (task: Task) => {
+  // Save dragged task changes to database
+  const saveDraggedTaskToDatabase = async (task: GanttTask) => {
     try {
-      setSaving(true);
+      const databaseId = task.databaseId || task.id.toString();
+      
       const { error } = await supabase
         .from('project_tasks')
-        .update({
-          start_date: task.start.toISOString().split('T')[0],
-          end_date: task.end.toISOString().split('T')[0],
-          progress: task.progress,
+        .update({ 
+          start_date: task.startDate,
           updated_at: new Date().toISOString()
         })
-        .eq('id', task.id);
+        .eq('id', databaseId);
 
-      if (error) throw error;
-      
-      // Update local state
-      setTasks(prevTasks => 
-        prevTasks.map(t => 
-          t.id === task.id 
-            ? {
-                ...t,
-                start_date: task.start.toISOString().split('T')[0],
-                end_date: task.end.toISOString().split('T')[0],
-                progress: task.progress
-              }
-            : t
-        )
-      );
-      
-      setSuccess('Task updated successfully!');
-      setTimeout(() => setSuccess(''), 3000);
+      if (error) {
+        console.error('Error saving dragged task:', error);
+        setError(`Failed to update task position: ${error.message || 'Unknown error'}`);
+      }
     } catch (error: any) {
-      console.error('Error updating task:', error);
-      setError(error.message || 'Failed to update task');
-    } finally {
-      setSaving(false);
+      console.error('Error saving dragged task:', error);
+      setError(`Failed to update task position: ${error.message || 'Unknown error'}`);
     }
   };
 
-  const handleAddTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      setSaving(true);
-      setError('');
-
-      if (!taskForm.name.trim() || !taskForm.start_date || !taskForm.end_date) {
-        throw new Error('Name, start date, and end date are required');
+  // Handle connection mode
+  const handleConnectionClick = (taskId: number) => {
+    if (!isConnecting) {
+      setIsConnecting(true);
+      setConnectionFrom(taskId);
+    } else {
+      if (connectionFrom !== taskId && connectionFrom !== null) {
+        // Add dependency
+        const newTasks = tasks.map(task => {
+          if (task.id === taskId && !task.dependencies.includes(connectionFrom)) {
+            return { ...task, dependencies: [...task.dependencies, connectionFrom] };
+          }
+          return task;
+        });
+        
+        // Update the task with the new dependency and propagate changes
+        const updatedTask = newTasks.find(t => t.id === taskId);
+        if (updatedTask) {
+          setTasks(updateDependentTasks(updatedTask, newTasks));
+        }
       }
+      setIsConnecting(false);
+      setConnectionFrom(null);
+    }
+  };
 
-      const taskData = {
+  // Add new task
+  const addTask = async () => {
+    try {
+      const newTaskData = {
         project_id: projectId,
-        name: taskForm.name.trim(),
-        start_date: taskForm.start_date,
-        end_date: taskForm.end_date,
-        progress: taskForm.progress,
-        type: taskForm.type,
-        assigned_to: taskForm.assigned_to.trim() || null,
-        notes: taskForm.notes.trim() || null,
-        color: taskForm.color
+        name: `New Task ${tasks.length + 1}`,
+        start_date: new Date().toISOString().split('T')[0],
+        end_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 3 days later
+        progress: 0,
+        type: 'task' as const,
+        assigned_to: null,
+        notes: null,
+        color: '#3B82F6'
       };
 
-      if (editingTask) {
-        // Update existing task
-        const { error } = await supabase
-          .from('project_tasks')
-          .update({
-            ...taskData,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', editingTask.id);
+      const { data, error } = await supabase
+        .from('project_tasks')
+        .insert([newTaskData])
+        .select()
+        .single();
 
-        if (error) throw error;
-        setSuccess('Task updated successfully!');
-      } else {
-        // Create new task
-        const { error } = await supabase
-          .from('project_tasks')
-          .insert([taskData]);
+      if (error) throw error;
 
-        if (error) throw error;
-        setSuccess('Task added successfully!');
-      }
+      const newTask: GanttTask = {
+        id: tasks.length + 1, // Use next sequential number for display
+        name: data.name,
+        startDate: data.start_date,
+        duration: 3,
+        dependencies: [],
+        databaseId: data.id // Store the actual database ID
+      };
 
-      resetForm();
-      fetchTasks();
+      setTasks([...tasks, newTask]);
+      setSuccess('Task added successfully!');
       setTimeout(() => setSuccess(''), 3000);
     } catch (error: any) {
-      console.error('Error saving task:', error);
-      setError(error.message || 'Failed to save task');
-    } finally {
-      setSaving(false);
+      console.error('Error adding task:', error);
+      setError(error.message || 'Failed to add task');
     }
   };
 
-  const handleEditTask = (task: ProjectTask) => {
-    setEditingTask(task);
-    setTaskForm({
-      name: task.name,
-      start_date: task.start_date,
-      end_date: task.end_date,
-      progress: task.progress,
-      type: task.type,
-      assigned_to: task.assigned_to || '',
-      notes: task.notes || '',
-      color: task.color || '#3B82F6'
-    });
-    setShowAddForm(true);
-  };
-
-  const handleDeleteTask = async (taskId: string) => {
-    if (!confirm('Are you sure you want to delete this task?')) return;
-
+  // Delete task
+  const deleteTask = async (taskId: number) => {
     try {
-      setSaving(true);
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) {
+        console.error('Task not found:', taskId);
+        return;
+      }
+
+      const databaseId = task.databaseId || taskId.toString();
+      
       const { error } = await supabase
         .from('project_tasks')
         .delete()
-        .eq('id', taskId);
+        .eq('id', databaseId);
 
       if (error) throw error;
-      
+
+      const newTasks = tasks.filter(task => task.id !== taskId)
+        .map(task => ({
+          ...task,
+          dependencies: task.dependencies.filter(depId => depId !== taskId)
+        }));
+      setTasks(newTasks);
       setSuccess('Task deleted successfully!');
-      fetchTasks();
       setTimeout(() => setSuccess(''), 3000);
     } catch (error: any) {
       console.error('Error deleting task:', error);
       setError(error.message || 'Failed to delete task');
-    } finally {
-      setSaving(false);
     }
   };
 
-  const resetForm = () => {
-    setShowAddForm(false);
-    setEditingTask(null);
-    setTaskForm({
-      name: '',
-      start_date: '',
-      end_date: '',
-      progress: 0,
-      type: 'task',
-      assigned_to: '',
-      notes: '',
-      color: '#3B82F6'
+  // Update task name
+  const updateTaskName = async (taskId: number, newName: string) => {
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) {
+        console.error('Task not found:', taskId);
+        return;
+      }
+
+      const databaseId = task.databaseId || taskId.toString();
+      
+      const { error } = await supabase
+        .from('project_tasks')
+        .update({ name: newName })
+        .eq('id', databaseId);
+
+      if (error) throw error;
+
+      setTasks(tasks.map(task => 
+        task.id === taskId ? { ...task, name: newName } : task
+      ));
+    } catch (error: any) {
+      console.error('Error updating task name:', error);
+      setError(`Failed to update task name: ${error.message || 'Unknown error'}`);
+    }
+  };
+
+  // Update task duration
+  const updateTaskDuration = async (taskId: number, newDuration: string) => {
+    const duration = parseInt(newDuration);
+    if (isNaN(duration) || duration < 1) return;
+
+    try {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) {
+        console.error('Task not found:', taskId);
+        return;
+      }
+
+      const startDate = new Date(task.startDate);
+      const endDate = new Date(startDate);
+      endDate.setDate(endDate.getDate() + duration);
+
+      console.log('Updating task:', { taskId, duration, startDate: task.startDate, endDate: endDate.toISOString().split('T')[0] });
+
+      const databaseId = task.databaseId || taskId.toString();
+
+      const { data, error } = await supabase
+        .from('project_tasks')
+        .update({ 
+          end_date: endDate.toISOString().split('T')[0],
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', databaseId)
+        .select();
+
+      if (error) {
+        console.error('Supabase error:', error);
+        throw error;
+      }
+
+      console.log('Update successful:', data);
+
+      const updatedTask = { ...task, duration };
+      setTasks(updateDependentTasks(updatedTask, tasks));
+    } catch (error: any) {
+      console.error('Error updating task duration:', error);
+      setError(`Failed to update task duration: ${error.message || 'Unknown error'}`);
+    }
+  };
+
+  // Draw dependency arrows
+  const renderDependencyArrows = () => {
+    const arrows: React.ReactElement[] = [];
+    
+    tasks.forEach((task, taskIndex) => {
+      task.dependencies.forEach(depId => {
+        const depTask = tasks.find(t => t.id === depId);
+        if (depTask) {
+          const depIndex = tasks.indexOf(depTask);
+          const depPos = getTaskPosition(depTask);
+          const taskPos = getTaskPosition(task);
+          
+          const startX = depPos.x + depPos.width;
+          const startY = depIndex * rowHeight + rowHeight / 2;
+          const endX = taskPos.x;
+          const endY = taskIndex * rowHeight + rowHeight / 2;
+          
+          arrows.push(
+            <g key={`${depId}-${task.id}`}>
+              <path
+                d={`M ${startX} ${startY} Q ${startX + 20} ${startY} ${endX - 20} ${endY} Q ${endX} ${endY} ${endX} ${endY}`}
+                stroke="#3b82f6"
+                strokeWidth="2"
+                fill="none"
+                markerEnd="url(#arrowhead)"
+              />
+            </g>
+          );
+        }
+      });
     });
-    setError('');
+    
+    return arrows;
   };
 
-  const ganttOptions: DisplayOption = {
-    viewMode: viewMode,
-    locale: 'en-US'
-  };
+  // Synchronize scrolling between task list and chart
+  useEffect(() => {
+    const taskList = document.getElementById('task-list');
+    const chartArea = document.getElementById('chart-area');
+    
+    if (!taskList || !chartArea) return;
+    
+    const syncScroll = (source: Element, target: Element) => {
+      target.scrollTop = source.scrollTop;
+    };
+    
+    const handleTaskListScroll = () => {
+      syncScroll(taskList, chartArea);
+    };
+    
+    const handleChartAreaScroll = () => {
+      syncScroll(chartArea, taskList);
+    };
+    
+    taskList.addEventListener('scroll', handleTaskListScroll);
+    chartArea.addEventListener('scroll', handleChartAreaScroll);
+    
+    return () => {
+      taskList.removeEventListener('scroll', handleTaskListScroll);
+      chartArea.removeEventListener('scroll', handleChartAreaScroll);
+    };
+  }, []);
 
-  const ganttStyling: StylingOption = {
-    headerHeight: 50,
-    columnWidth: viewMode === ViewMode.Month ? 300 : 65,
-    listCellWidth: '155px',
-    rowHeight: 50,
-    ganttHeight: 400,
-    barBackgroundColor: '#3B82F6',
-    barBackgroundSelectedColor: '#1E40AF',
-    barProgressColor: '#60A5FA',
-    barProgressSelectedColor: '#3B82F6',
-    projectProgressColor: '#60A5FA',
-    projectProgressSelectedColor: '#3B82F6',
-    milestoneBackgroundColor: '#EF4444',
-    milestoneBackgroundSelectedColor: '#DC2626'
-  };
+  useEffect(() => {
+    const handleGlobalMouseMove = (e: MouseEvent) => handleMouseMove(e);
+    const handleGlobalMouseUp = () => handleMouseUp();
+    
+    if (draggedTask || isConnecting) {
+      document.addEventListener('mousemove', handleGlobalMouseMove);
+      document.addEventListener('mouseup', handleGlobalMouseUp);
+    }
+    
+    return () => {
+      document.removeEventListener('mousemove', handleGlobalMouseMove);
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+    };
+  }, [draggedTask, isConnecting, dragOffset]);
 
   if (loading) {
     return (
@@ -352,9 +585,9 @@ export default function ProjectGanttPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="w-full h-screen bg-gray-50 flex flex-col">
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="bg-white border-b border-gray-200 p-4 flex justify-between items-center">
         <div className="flex items-center gap-4">
           <Link 
             href={`/projects/${projectId}`}
@@ -371,244 +604,200 @@ export default function ProjectGanttPage() {
             <p className="text-gray-600">{project?.name}</p>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <select
-            value={viewMode}
-            onChange={(e) => setViewMode(e.target.value as ViewMode)}
-            className="px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-          >
-            <option value={ViewMode.Day}>Day View</option>
-            <option value={ViewMode.Week}>Week View</option>
-            <option value={ViewMode.Month}>Month View</option>
-            <option value={ViewMode.Year}>Year View</option>
-          </select>
+        <div className="flex gap-2">
           <button
-            onClick={() => setShowAddForm(true)}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+            onClick={addTask}
+            className="flex items-center gap-2 bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600 transition-colors"
           >
-            <Plus className="w-4 h-4" />
+            <Plus size={16} />
             Add Task
+          </button>
+          <button
+            onClick={() => setIsConnecting(!isConnecting)}
+            className={`flex items-center gap-2 px-4 py-2 rounded transition-colors ${
+              isConnecting 
+                ? 'bg-green-500 text-white hover:bg-green-600' 
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+            }`}
+          >
+            <LinkIcon size={16} />
+            {isConnecting ? 'Connecting...' : 'Connect Tasks'}
           </button>
         </div>
       </div>
 
       {/* Messages */}
       {success && (
-        <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md">
+        <div className="mx-4 mt-4 p-3 bg-green-100 text-green-700 rounded-md">
           {success}
         </div>
       )}
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-md">
+        <div className="mx-4 mt-4 p-3 bg-red-100 text-red-700 rounded-md">
           {error}
         </div>
       )}
 
-      {/* Add/Edit Task Form */}
-      {showAddForm && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-4">
-            {editingTask ? 'Edit Task' : 'Add New Task'}
-          </h2>
-          <form onSubmit={handleAddTask}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Task Name *
-                </label>
-                <input
-                  type="text"
-                  value={taskForm.name}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, name: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Foundation work, Framing, etc."
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Type
-                </label>
-                <select
-                  value={taskForm.type}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, type: e.target.value as any }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="task">Task</option>
-                  <option value="milestone">Milestone</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Start Date *
-                </label>
-                <input
-                  type="date"
-                  value={taskForm.start_date}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, start_date: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  End Date *
-                </label>
-                <input
-                  type="date"
-                  value={taskForm.end_date}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, end_date: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Progress (%)
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  value={taskForm.progress}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, progress: parseInt(e.target.value) || 0 }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Assigned To
-                </label>
-                <select
-                  value={taskForm.assigned_to}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, assigned_to: e.target.value }))}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                >
-                  <option value="">Select assignee...</option>
-                  <optgroup label="Crew Members">
-                    {crewMembers.map(member => (
-                      <option key={`crew-${member.id}`} value={member.name}>
-                        {member.name} {member.role ? `(${member.role})` : ''}
-                      </option>
-                    ))}
-                  </optgroup>
-                  <optgroup label="Contractors">
-                    {contractors.map(contractor => (
-                      <option key={`contractor-${contractor.id}`} value={contractor.name}>
-                        {contractor.name} {contractor.specialty ? `- ${contractor.specialty}` : ''}
-                      </option>
-                    ))}
-                  </optgroup>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Color
-                </label>
-                <input
-                  type="color"
-                  value={taskForm.color}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, color: e.target.value }))}
-                  className="w-full h-10 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Notes
-                </label>
-                <textarea
-                  value={taskForm.notes}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, notes: e.target.value }))}
-                  rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
-                  placeholder="Additional task details..."
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-3 mt-6">
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors disabled:opacity-50"
-              >
-                <Save className="w-4 h-4" />
-                {saving ? 'Saving...' : (editingTask ? 'Update Task' : 'Add Task')}
-              </button>
-              <button
-                type="button"
-                onClick={resetForm}
-                className="px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Gantt Chart */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        {ganttTasks.length > 0 ? (
-          <div className="overflow-x-auto">
-            <Gantt
-              tasks={ganttTasks}
-              viewMode={viewMode}
-              onDateChange={handleTaskChange}
-              onProgressChange={handleTaskChange}
-              onDoubleClick={() => {}}
-              {...ganttOptions}
-              {...ganttStyling}
-            />
+      {/* Chart */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left Panel - Task List (Sticky) */}
+        <div className="w-80 bg-white border-r border-gray-200 flex flex-col z-10">
+          <div className="h-20 border-b border-gray-200 flex items-center px-4 bg-gray-50">
+            <h3 className="font-semibold text-gray-700">Tasks</h3>
           </div>
-        ) : (
-          <div className="text-center py-12">
-            <Calendar className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">No tasks yet</h3>
-            <p className="text-gray-500 mb-4">Add your first task to start building your project timeline.</p>
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
+          <div className="flex-1 overflow-y-auto" id="task-list">
+            {tasks.map((task, index) => (
+              <div
+                key={task.id}
+                className={`border-b border-gray-100 flex items-center px-4 group ${
+                  isConnecting && connectionFrom === task.id ? 'bg-blue-100' : 'hover:bg-gray-50'
+                }`}
+                onClick={() => isConnecting && handleConnectionClick(task.id)}
+                style={{ height: `${rowHeight}px` }}
+              >
+                <div className="flex-1 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={task.name}
+                    onChange={(e) => updateTaskName(task.id, e.target.value)}
+                    className="bg-transparent border-none outline-none text-sm font-medium flex-1"
+                    disabled={isConnecting}
+                  />
+                  <input
+                    type="number"
+                    value={task.duration}
+                    onChange={(e) => updateTaskDuration(task.id, e.target.value)}
+                    className="w-12 text-xs bg-gray-100 border border-gray-300 rounded px-1 py-1"
+                    min="1"
+                    disabled={isConnecting}
+                  />
+                  <span className="text-xs text-gray-500">days</span>
+                </div>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteTask(task.id);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 transition-opacity"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Right Panel - Gantt Chart */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Date Headers */}
+          <div className="h-20 bg-white border-b border-gray-200 overflow-x-auto">
+            <div className="flex h-full" style={{ width: `${dateHeaders.length * dayWidth}px` }}>
+              {dateHeaders.map((date, index) => (
+                <div
+                  key={index}
+                  className="flex-shrink-0 border-r border-gray-200 flex flex-col items-center justify-center text-xs"
+                  style={{ width: `${dayWidth}px` }}
+                >
+                  <div className="font-semibold text-gray-700">
+                    {date.toLocaleDateString('en-US', { weekday: 'short' })}
+                  </div>
+                  <div className="text-gray-500">
+                    {date.getDate()}
+                  </div>
+                  <div className="text-gray-400">
+                    {date.toLocaleDateString('en-US', { month: 'short' })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Chart Area */}
+          <div className="flex-1 overflow-auto relative" ref={chartRef} id="chart-area">
+            <svg
+              className="absolute inset-0 pointer-events-none"
+              style={{ width: `${dateHeaders.length * dayWidth}px`, height: `${tasks.length * rowHeight}px` }}
             >
-              <Plus className="w-4 h-4" />
-              Add First Task
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Task Summary */}
-      {tasks.length > 0 && (
-        <div className="mt-6 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold mb-4">Task Summary</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-blue-50 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-blue-600">{tasks.length}</div>
-              <div className="text-sm text-blue-800">Total Tasks</div>
-            </div>
-            <div className="bg-green-50 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-green-600">
-                {tasks.filter(t => t.progress === 100).length}
-              </div>
-              <div className="text-sm text-green-800">Completed</div>
-            </div>
-            <div className="bg-orange-50 p-4 rounded-lg">
-              <div className="text-2xl font-bold text-orange-600">
-                {Math.round(tasks.reduce((sum, task) => sum + task.progress, 0) / tasks.length)}%
-              </div>
-              <div className="text-sm text-orange-800">Average Progress</div>
+              <defs>
+                <marker
+                  id="arrowhead"
+                  markerWidth="10"
+                  markerHeight="7"
+                  refX="9"
+                  refY="3.5"
+                  orient="auto"
+                >
+                  <polygon points="0 0, 10 3.5, 0 7" fill="#3b82f6" />
+                </marker>
+              </defs>
+              
+              {/* Grid lines */}
+              {dateHeaders.map((_, index) => (
+                <line
+                  key={index}
+                  x1={index * dayWidth}
+                  y1={0}
+                  x2={index * dayWidth}
+                  y2={tasks.length * rowHeight}
+                  stroke="#e5e7eb"
+                  strokeWidth="1"
+                />
+              ))}
+              
+              {/* Dependency arrows */}
+              {renderDependencyArrows()}
+              
+              {/* Connection line while connecting */}
+              {isConnecting && connectionFrom && (
+                <line
+                  x1={getTaskPosition(tasks.find(t => t.id === connectionFrom)!).x + getTaskPosition(tasks.find(t => t.id === connectionFrom)!).width}
+                  y1={tasks.findIndex(t => t.id === connectionFrom) * rowHeight + rowHeight / 2}
+                  x2={mousePos.x}
+                  y2={mousePos.y}
+                  stroke="#3b82f6"
+                  strokeWidth="2"
+                  strokeDasharray="5,5"
+                />
+              )}
+            </svg>
+            
+            <div style={{ width: `${dateHeaders.length * dayWidth}px`, height: `${tasks.length * rowHeight}px` }}>
+              {tasks.map((task, index) => {
+                const pos = getTaskPosition(task);
+                return (
+                  <div
+                    key={task.id}
+                    className={`absolute flex items-center cursor-pointer ${
+                      isConnecting 
+                        ? 'cursor-crosshair' 
+                        : draggedTask?.id === task.id 
+                          ? 'cursor-grabbing' 
+                          : 'cursor-grab'
+                    }`}
+                    style={{
+                      left: `${pos.x}px`,
+                      top: `${index * rowHeight + 10}px`,
+                      width: `${pos.width}px`,
+                      height: `${rowHeight - 20}px`
+                    }}
+                    onMouseDown={(e) => handleTaskMouseDown(e, task)}
+                    onClick={() => isConnecting && handleConnectionClick(task.id)}
+                  >
+                    <div className={`w-full h-full rounded shadow-sm flex items-center px-3 text-white text-sm font-medium ${
+                      isConnecting && connectionFrom === task.id 
+                        ? 'bg-blue-500' 
+                        : 'bg-blue-400 hover:bg-blue-500'
+                    }`}>
+                      {task.name}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
