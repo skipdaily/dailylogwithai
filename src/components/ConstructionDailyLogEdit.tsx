@@ -3,20 +3,20 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { 
-  Building2, 
-  Users, 
-  Wrench, 
-  AlertTriangle, 
-  MessageSquare, 
-  FileText, 
-  CheckSquare, 
-  Calendar, 
-  Eye, 
-  Plus, 
-  Save, 
-  ArrowLeft, 
-  Download, 
+import {
+  Building2,
+  Users,
+  Wrench,
+  AlertTriangle,
+  MessageSquare,
+  FileText,
+  CheckSquare,
+  Calendar,
+  Eye,
+  Plus,
+  Save,
+  ArrowLeft,
+  Download,
   AlertCircle,
   X
 } from 'lucide-react';
@@ -34,14 +34,11 @@ interface DailyLogData {
   superintendentName: string;
   projectId: string | null;
   projectName: string;
-  subcontractors: Subcontractor[];
-  crews: Crew[];
-  workItems: TextItem[];
+  contractors: ContractorEntry[];
   delays: TextItem[];
   tradesOnsite: TextItem[];
   meetings: TextItem[];
   outOfScope: TextItem[];
-  actionItems: TextItem[];
   nextDayPlan: TextItem[];
   notes: TextItem[];
 }
@@ -58,20 +55,18 @@ interface Subcontractor {
   name: string;
 }
 
-interface Crew {
-  id: string;
-  name: string;
-  members: CrewMember[];
-}
-
-interface CrewMember {
-  id: string;
-  name: string;
-}
-
 interface TextItem {
   id: string;
   text: string;
+}
+
+interface ContractorEntry {
+  id: string;
+  subcontractorId: string;
+  name: string;
+  crewCount: number;
+  crewNames: string;
+  workPerformed: string;
 }
 
 interface SectionProps {
@@ -113,26 +108,26 @@ const Section: React.FC<SectionProps> = ({ title, icon: Icon, children, showActi
 );
 
 // Text items list component
-const TextItemsList = ({ 
-  items, 
-  setItems, 
+const TextItemsList = ({
+  items,
+  setItems,
   placeholder,
   rows = 3
-}: { 
-  items: TextItem[], 
+}: {
+  items: TextItem[],
   setItems: (items: TextItem[]) => void,
   placeholder: string,
   rows?: number
 }) => {
   // Ensure items is always an array
   const safeItems = Array.isArray(items) ? items : [{ id: generateId(), text: '' }];
-  
+
   const addItem = () => {
     setItems([...safeItems, { id: generateId(), text: '' }]);
   };
 
   const updateItem = (id: string, text: string) => {
-    setItems(safeItems.map(item => 
+    setItems(safeItems.map(item =>
       item.id === id ? { ...item, text } : item
     ));
   };
@@ -177,12 +172,12 @@ const TextItemsList = ({
 };
 
 // Subcontractors management component
-const SubcontractorManager = ({ 
-  subcontractors, 
+const SubcontractorManager = ({
+  subcontractors,
   setSubcontractors,
-  availableSubcontractors 
-}: { 
-  subcontractors: Subcontractor[], 
+  availableSubcontractors
+}: {
+  subcontractors: Subcontractor[],
   setSubcontractors: (subs: Subcontractor[]) => void,
   availableSubcontractors: Subcontractor[]
 }) => {
@@ -190,13 +185,13 @@ const SubcontractorManager = ({
 
   const addSubcontractor = () => {
     if (!selectedSubcontractorId) return;
-    
+
     const subcontractor = availableSubcontractors.find(s => s.id === selectedSubcontractorId);
     if (!subcontractor) return;
-    
+
     // Check if already added
     if (subcontractors.find(s => s.id === subcontractor.id)) return;
-    
+
     setSubcontractors([...subcontractors, subcontractor]);
     setSelectedSubcontractorId('');
   };
@@ -246,98 +241,23 @@ const SubcontractorManager = ({
   );
 };
 
-// Crews management component
-const CrewManager = ({ 
-  crews, 
-  setCrews,
-  availableCrews 
-}: { 
-  crews: Crew[], 
-  setCrews: (crews: Crew[]) => void,
-  availableCrews: Crew[]
-}) => {
-  const [selectedCrewId, setSelectedCrewId] = useState('');
-  
-  const addCrew = () => {
-    if (!selectedCrewId) return;
-    
-    const crew = availableCrews.find(c => c.id === selectedCrewId);
-    if (!crew) return;
-    
-    // Check if already added
-    if (crews.find(c => c.id === crew.id)) return;
-    
-    setCrews([...crews, crew]);
-    setSelectedCrewId('');
-  };
-
-  const removeCrew = (crewId: string) => {
-    setCrews(crews.filter(crew => crew.id !== crewId));
-  };
-
-  return (
-    <div>
-      <div className="flex gap-2 mb-4">
-        <select
-          value={selectedCrewId}
-          onChange={(e) => setSelectedCrewId(e.target.value)}
-          className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="">Select crew...</option>
-          {availableCrews
-            .filter(crew => !crews.find(c => c.id === crew.id))
-            .map(crew => (
-              <option key={crew.id} value={crew.id}>{crew.name}</option>
-            ))}
-        </select>
-        <button
-          onClick={addCrew}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
-          type="button"
-        >
-          Add
-        </button>
-      </div>
-      <div className="space-y-4">
-        {crews.map(crew => (
-          <div key={crew.id} className="p-3 bg-gray-50 rounded-md">
-            <div className="flex items-center justify-between mb-2">
-              <span className="font-medium">{crew.name}</span>
-              <button
-                onClick={() => removeCrew(crew.id)}
-                className="text-red-600 hover:text-red-800"
-                type="button"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-            <div className="text-sm text-gray-600">
-              Members: {crew.members.map(member => member.name).join(', ')}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
 // Trades list component
-const TradesList = ({ 
-  trades, 
-  setTrades 
-}: { 
-  trades: TextItem[], 
+const TradesList = ({
+  trades,
+  setTrades
+}: {
+  trades: TextItem[],
   setTrades: (trades: TextItem[]) => void
 }) => {
   // Ensure trades is always an array
   const safeTrades = Array.isArray(trades) ? trades : [{ id: generateId(), text: '' }];
-  
+
   const addTrade = () => {
     setTrades([...safeTrades, { id: generateId(), text: '' }]);
   };
 
   const updateTrade = (id: string, text: string) => {
-    setTrades(safeTrades.map(trade => 
+    setTrades(safeTrades.map(trade =>
       trade.id === id ? { ...trade, text } : trade
     ));
   };
@@ -381,6 +301,113 @@ const TradesList = ({
   );
 };
 
+// New ContractorsManager (same implementation concept as in create file)
+const ContractorsManager = ({
+  contractors,
+  setContractors,
+  availableSubcontractors
+}: {
+  contractors: ContractorEntry[];
+  setContractors: (c: ContractorEntry[]) => void;
+  availableSubcontractors: Subcontractor[];
+}) => {
+  const [selected, setSelected] = useState('');
+  const add = () => {
+    if (!selected) return;
+    const sub = availableSubcontractors.find(s => s.id === selected);
+    if (!sub) return;
+    if (contractors.find(c => c.subcontractorId === sub.id)) return;
+    setContractors([
+      ...contractors,
+      {
+        id: generateId(),
+        subcontractorId: sub.id,
+        name: sub.name,
+        crewCount: 0,
+        crewNames: '',
+        workPerformed: ''
+      }
+    ]);
+    setSelected('');
+  };
+  const update = (id: string, patch: Partial<ContractorEntry>) =>
+    setContractors(contractors.map(c => c.id === id ? { ...c, ...patch } : c));
+  const remove = (id: string) => setContractors(contractors.filter(c => c.id !== id));
+  return (
+    <div>
+      <div className="flex gap-2 mb-4">
+        <select
+          value={selected}
+          onChange={e => setSelected(e.target.value)}
+          className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+          <option value="">Select contractor...</option>
+          {availableSubcontractors
+            .filter(s => !contractors.find(c => c.subcontractorId === s.id))
+            .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <button
+          onClick={add}
+          disabled={!selected}
+          className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+          type="button"
+        >
+          Add
+        </button>
+      </div>
+      {contractors.length === 0 && <p className="text-gray-500 italic">No contractors added</p>}
+      <div className="space-y-4">
+        {contractors.map(c => (
+          <div key={c.id} className="p-4 bg-gray-50 border border-gray-200 rounded-lg space-y-3">
+            <div className="flex justify-between">
+              <h4 className="font-semibold text-sm">{c.name}</h4>
+              <button
+                onClick={() => remove(c.id)}
+                className="text-red-600 hover:text-red-800 text-sm"
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Crew Count</label>
+                <input
+                  type="number"
+                  min={0}
+                  value={c.crewCount}
+                  onChange={e => update(c.id, { crewCount: parseInt(e.target.value || '0', 10) })}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Crew Names (optional)</label>
+                <textarea
+                  rows={2}
+                  value={c.crewNames}
+                  onChange={e => update(c.id, { crewNames: e.target.value })}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                  placeholder="List crew members..."
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-gray-600 mb-1">Work Performed</label>
+                <textarea
+                  rows={3}
+                  value={c.workPerformed}
+                  onChange={e => update(c.id, { workPerformed: e.target.value })}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="Describe work performed..."
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // Main ConstructionDailyLogEdit component
 interface ConstructionDailyLogEditProps {
   logId: string;
@@ -388,18 +415,11 @@ interface ConstructionDailyLogEditProps {
 
 const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ logId }) => {
   const router = useRouter();
-  
+
   // Ensure all items have default arrays with at least one item
   const createDefaultItem = () => ({ id: generateId(), text: '' });
   const createDefaultArray = () => [createDefaultItem()];
-  
-  const createDefaultCrewMember = (name: string) => ({ id: generateId(), name });
-  const createDefaultCrew = (name: string, members: string[] = []) => ({
-    id: generateId(),
-    name,
-    members: members.map(name => createDefaultCrewMember(name))
-  });
-  
+
   // Initialize state with unique IDs for all items
   const [logData, setLogData] = useState<DailyLogData>({
     id: logId,
@@ -407,14 +427,11 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
     superintendentName: '',
     projectId: null,
     projectName: '',
-    subcontractors: [],
-    crews: [],
-    workItems: createDefaultArray(),
+    contractors: [],
     delays: createDefaultArray(),
     tradesOnsite: createDefaultArray(),
     meetings: createDefaultArray(),
     outOfScope: createDefaultArray(),
-    actionItems: createDefaultArray(),
     nextDayPlan: createDefaultArray(),
     notes: createDefaultArray(),
   });
@@ -422,7 +439,6 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
   // Additional state for Supabase integration
   const [projects, setProjects] = useState<Project[]>([]);
   const [availableSubcontractors, setAvailableSubcontractors] = useState<Subcontractor[]>([]);
-  const [availableCrews, setAvailableCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -439,13 +455,13 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      
+
       // Fetch projects
       const { data: projectsData, error: projectsError } = await supabase
         .from('projects')
         .select('id, name, location, client')
         .order('name');
-      
+
       if (projectsError) throw projectsError;
       setProjects(projectsData || []);
 
@@ -454,34 +470,10 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
         .from('subcontractors')
         .select('id, name')
         .order('name');
-      
+
       if (subcontractorsError) throw subcontractorsError;
       setAvailableSubcontractors(subcontractorsData || []);
 
-      // Fetch crews with members
-      const { data: crewsData, error: crewsError } = await supabase
-        .from('crews')
-        .select(`
-          id,
-          name,
-          crew_members(id, name, role)
-        `)
-        .order('name');
-      
-      if (crewsError) throw crewsError;
-      
-      // Transform crew data to match our interface
-      const transformedCrews = (crewsData || []).map(crew => ({
-        id: crew.id,
-        name: crew.name,
-        members: (crew.crew_members || []).map((member: any) => ({
-          id: member.id,
-          name: member.name
-        }))
-      }));
-      
-      setAvailableCrews(transformedCrews);
-      
     } catch (error: any) {
       console.error('Error fetching initial data:', error);
       setError(error.message || 'Failed to load data');
@@ -493,7 +485,7 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
   const fetchLogData = async () => {
     try {
       setLoading(true);
-      
+
       // Fetch the daily log
       const { data: logData, error: logError } = await supabase
         .from('daily_logs')
@@ -501,8 +493,7 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
           *,
           projects(id, name, location, client),
           log_sections(id, section_type, content, order_num),
-          log_subcontractors(subcontractor_id, subcontractors(id, name)),
-          log_crews(crew_id, crews(id, name, crew_members(id, name, role)))
+          log_subcontractors(subcontractor_id, subcontractors(id, name))
         `)
         .eq('id', logId)
         .single();
@@ -517,24 +508,11 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
           superintendentName: logData.superintendent_name || '',
           projectId: logData.project_id,
           projectName: logData.projects?.name || '',
-          subcontractors: (logData.log_subcontractors || []).map((item: any) => ({
-            id: item.subcontractors.id,
-            name: item.subcontractors.name
-          })),
-          crews: (logData.log_crews || []).map((item: any) => ({
-            id: item.crews.id,
-            name: item.crews.name,
-            members: (item.crews.crew_members || []).map((member: any) => ({
-              id: member.id,
-              name: member.name
-            }))
-          })),
-          workItems: createDefaultArray(),
+          contractors: [],
           delays: createDefaultArray(),
           tradesOnsite: createDefaultArray(),
           meetings: createDefaultArray(),
           outOfScope: createDefaultArray(),
-          actionItems: createDefaultArray(),
           nextDayPlan: createDefaultArray(),
           notes: createDefaultArray(),
         };
@@ -542,17 +520,14 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
         // Parse log sections into their respective arrays
         if (logData.log_sections) {
           const sections = logData.log_sections.sort((a: any, b: any) => a.order_num - b.order_num);
-          
+
           sections.forEach((section: any) => {
             const items = section.content.split('\n').filter((text: string) => text.trim()).map((text: string) => ({
               id: generateId(),
               text: text.trim()
             }));
-            
+
             switch (section.section_type) {
-              case 'work_performed':
-                transformedLogData.workItems = items.length > 0 ? items : createDefaultArray();
-                break;
               case 'delays':
                 transformedLogData.delays = items.length > 0 ? items : createDefaultArray();
                 break;
@@ -565,9 +540,6 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
               case 'out_of_scope':
                 transformedLogData.outOfScope = items.length > 0 ? items : createDefaultArray();
                 break;
-              case 'action_items':
-                transformedLogData.actionItems = items.length > 0 ? items : createDefaultArray();
-                break;
               case 'next_day_plan':
                 transformedLogData.nextDayPlan = items.length > 0 ? items : createDefaultArray();
                 break;
@@ -578,9 +550,29 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
           });
         }
 
+        const contractorWorkSections = (logData.log_sections || []).filter((s: any) => s.section_type === 'contractor_work');
+        const contractorsMap: ContractorEntry[] = contractorWorkSections.map((s: any) => {
+          try {
+            const parsed = JSON.parse(s.content);
+            const subRel = (logData.log_subcontractors || []).find((ls: any) => ls.subcontractor_id === parsed.subcontractor_id);
+            const name = subRel?.subcontractors?.name || 'Unknown';
+            return {
+              id: generateId(),
+              subcontractorId: parsed.subcontractor_id,
+              name,
+              crewCount: parsed.crewCount ?? 0,
+              crewNames: parsed.crewNames ?? '',
+              workPerformed: parsed.workPerformed ?? ''
+            };
+          } catch {
+            return null;
+          }
+        }).filter(Boolean);
+        transformedLogData.contractors = contractorsMap.length > 0 ? contractorsMap : [];
+
         setLogData(transformedLogData);
       }
-      
+
     } catch (error: any) {
       console.error('Error fetching log data:', error);
       setError(error.message || 'Failed to load log data');
@@ -599,8 +591,8 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
 
   const handleProjectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedProject = projects.find(p => p.id === e.target.value);
-    setLogData(prev => ({ 
-      ...prev, 
+    setLogData(prev => ({
+      ...prev,
       projectId: e.target.value || null,
       projectName: selectedProject?.name || ''
     }));
@@ -644,12 +636,10 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
 
       // Add all sections with content
       const sectionMap = [
-        { type: 'work_performed', items: logData.workItems },
         { type: 'delays', items: logData.delays },
         { type: 'trades_onsite', items: logData.tradesOnsite },
         { type: 'meetings', items: logData.meetings },
         { type: 'out_of_scope', items: logData.outOfScope },
-        { type: 'action_items', items: logData.actionItems },
         { type: 'next_day_plan', items: logData.nextDayPlan },
         { type: 'notes', items: logData.notes }
       ];
@@ -659,7 +649,7 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
           .filter(item => item.text.trim())
           .map(item => item.text.trim())
           .join('\n');
-        
+
         if (content) {
           logSections.push({
             log_id: logId,
@@ -670,7 +660,23 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
         }
       }
 
-      // Save log sections
+      // ADD contractor_work rows BEFORE insertion (was after insert previously -> bug)
+      for (const contractor of logData.contractors) {
+        const payload = {
+          subcontractor_id: contractor.subcontractorId,
+          crewCount: contractor.crewCount,
+          crewNames: contractor.crewNames,
+          workPerformed: contractor.workPerformed
+        };
+        logSections.push({
+          log_id: logId,
+          section_type: 'contractor_work',
+          content: JSON.stringify(payload),
+          order_num: orderNum++
+        });
+      }
+
+      // Single insert including contractor_work
       if (logSections.length > 0) {
         const { error: sectionsError } = await supabase
           .from('log_sections')
@@ -679,7 +685,7 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
         if (sectionsError) throw sectionsError;
       }
 
-      // Delete existing subcontractor associations
+      // Reset subcontractor associations
       const { error: deleteSubsError } = await supabase
         .from('log_subcontractors')
         .delete()
@@ -688,9 +694,9 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
       if (deleteSubsError) throw deleteSubsError;
 
       // Save subcontractor associations
-      const subcontractorAssociations = logData.subcontractors.map(sub => ({
+      const subcontractorAssociations = logData.contractors.map(c => ({
         log_id: logId,
-        subcontractor_id: sub.id
+        subcontractor_id: c.subcontractorId
       }));
 
       if (subcontractorAssociations.length > 0) {
@@ -701,35 +707,13 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
         if (subsError) throw subsError;
       }
 
-      // Delete existing crew associations
-      const { error: deleteCrewsError } = await supabase
-        .from('log_crews')
-        .delete()
-        .eq('log_id', logId);
-
-      if (deleteCrewsError) throw deleteCrewsError;
-
-      // Save crew associations
-      const crewAssociations = logData.crews.map(crew => ({
-        log_id: logId,
-        crew_id: crew.id
-      }));
-
-      if (crewAssociations.length > 0) {
-        const { error: crewsError } = await supabase
-          .from('log_crews')
-          .insert(crewAssociations);
-
-        if (crewsError) throw crewsError;
-      }
-
       setSuccess('Daily log updated successfully!');
-      
+
       // Redirect back to view page after a short delay
       setTimeout(() => {
         router.push(`/logs/${logId}`);
       }, 1000);
-      
+
     } catch (error: any) {
       console.error('Error updating daily log:', error);
       setError(error.message || 'Failed to update daily log');
@@ -743,8 +727,7 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
       // Map section types to source types
       const sourceTypeMap: { [key: string]: string } = {
         'meetings': 'meeting',
-        'outOfScope': 'out_of_scope', 
-        'actionItems': 'action_item',
+        'outOfScope': 'out_of_scope',
         'notes': 'observation'
       };
 
@@ -770,14 +753,14 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
       if (error) throw error;
 
       setSuccess('Action item created successfully!');
-      
+
       // Clear success message after 3 seconds
       setTimeout(() => setSuccess(''), 3000);
-      
+
     } catch (error: any) {
       console.error('Error creating action item:', error);
       setError(error.message || 'Failed to create action item');
-      
+
       // Clear error message after 5 seconds
       setTimeout(() => setError(''), 5000);
     }
@@ -806,7 +789,7 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
               <h1 className="text-2xl font-bold text-gray-800">Edit Daily Log</h1>
             </div>
             <div className="flex gap-3">
-              <Link 
+              <Link
                 href={`/logs/${logId}`}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
               >
@@ -832,7 +815,7 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
               {error}
             </div>
           )}
-          
+
           {success && (
             <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md">
               {success}
@@ -881,118 +864,78 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
           </div>
         </div>
 
-        {/* Manage Subcontractors and Crews */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <Section title="Manage Subcontractors" icon={Users}>
-            <SubcontractorManager 
-              subcontractors={logData.subcontractors} 
-              setSubcontractors={(newSubs: Subcontractor[]) => setLogData(prev => ({ ...prev, subcontractors: newSubs }))}
-              availableSubcontractors={availableSubcontractors}
-            />
-          </Section>
-
-          <Section title="Manage Crews" icon={Users}>
-            <CrewManager 
-              crews={logData.crews} 
-              setCrews={(newCrews: Crew[]) => setLogData(prev => ({ ...prev, crews: newCrews }))}
-              availableCrews={availableCrews}
-            />
-          </Section>
-        </div>
-
-        {/* Work Performed */}
-        <Section title="1. Work Performed (All Trades)" icon={Wrench}>
-          <TextItemsList 
-            items={logData.workItems || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, workItems: newItems }))} 
-            placeholder="Describe work performed..."
+        {/* Manage Subcontractors */}
+        <Section title="1. Contractors (Crew & Work Performed)" icon={Users}>
+          <ContractorsManager
+            contractors={logData.contractors}
+            setContractors={(c: ContractorEntry[]) => setLogData(prev => ({ ...prev, contractors: c }))}
+            availableSubcontractors={availableSubcontractors}
           />
         </Section>
 
-        {/* Delays */}
-        <Section title="2. Delays / Disruptions" icon={AlertTriangle}>
-          <TextItemsList 
-            items={logData.delays || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, delays: newItems }))} 
-            placeholder="Describe delays or disruptions..."
+        <Section title="2. Visitors on site" icon={Users}>
+          <TradesList
+            trades={logData.tradesOnsite || createDefaultArray()}
+            setTrades={(newTrades: TextItem[]) => setLogData(prev => ({ ...prev, tradesOnsite: newTrades }))}
           />
         </Section>
 
-        {/* Trades Onsite */}
-        <Section title="3. Trades Onsite" icon={Users}>
-          <TradesList 
-            trades={logData.tradesOnsite || createDefaultArray()} 
-            setTrades={(newTrades: TextItem[]) => setLogData(prev => ({ ...prev, tradesOnsite: newTrades }))} 
-          />
-        </Section>
-
-        {/* Meetings */}
-        <Section 
-          title="4. Meetings / Discussions" 
+        <Section
+          title="3. Meetings / Discussions"
           icon={MessageSquare}
           showActionButton={true}
           onCreateActionItem={createActionItem}
           sectionType="meetings"
         >
-          <TextItemsList 
-            items={logData.meetings || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, meetings: newItems }))} 
+          <TextItemsList
+            items={logData.meetings || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, meetings: newItems }))}
             placeholder="Describe meetings and discussions..."
             rows={4}
           />
         </Section>
 
-        {/* Out of Scope */}
-        <Section 
-          title="5. Out-of-Scope / Extra Work Identified" 
+        <Section
+          title="4. Out-of-Scope / Extra Work Identified"
           icon={FileText}
           showActionButton={true}
           onCreateActionItem={createActionItem}
           sectionType="outOfScope"
         >
-          <TextItemsList 
-            items={logData.outOfScope || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, outOfScope: newItems }))} 
+          <TextItemsList
+            items={logData.outOfScope || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, outOfScope: newItems }))}
             placeholder="Describe out-of-scope or extra work..."
           />
         </Section>
 
-        {/* Action Items */}
-        <Section 
-          title="6. Action Items" 
-          icon={CheckSquare}
-          showActionButton={true}
-          onCreateActionItem={createActionItem}
-          sectionType="actionItems"
-        >
-          <TextItemsList 
-            items={logData.actionItems || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, actionItems: newItems }))} 
-            placeholder="Describe action items..."
+        <Section title="5. Delays / Disruptions" icon={AlertTriangle}>
+          <TextItemsList
+            items={logData.delays || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, delays: newItems }))}
+            placeholder="Describe delays or disruptions..."
           />
         </Section>
 
-        {/* Next Day Plan */}
-        <Section title="7. Plan for Next Day (All Trades)" icon={Calendar}>
-          <TextItemsList 
-            items={logData.nextDayPlan || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, nextDayPlan: newItems }))} 
-            placeholder="Describe tomorrow's plan..."
-          />
-        </Section>
-
-        {/* Notes */}
-        <Section 
-          title="8. Notes / Observations" 
+        <Section
+          title="6. Notes / Observations"
           icon={Eye}
           showActionButton={true}
           onCreateActionItem={createActionItem}
           sectionType="notes"
         >
-          <TextItemsList 
-            items={logData.notes || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, notes: newItems }))} 
+          <TextItemsList
+            items={logData.notes || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, notes: newItems }))}
             placeholder="Add notes and observations..."
+          />
+        </Section>
+
+        <Section title="7. Plan for Next Day/Week (All Trades)" icon={Calendar}>
+          <TextItemsList
+            items={logData.nextDayPlan || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, nextDayPlan: newItems }))}
+            placeholder="Describe plan for next day/week..."
           />
         </Section>
       </div>
