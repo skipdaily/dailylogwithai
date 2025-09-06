@@ -17,9 +17,7 @@ interface DailyLogData {
   superintendentName: string;
   projectId: string | null;
   projectName: string;
-  subcontractors: Subcontractor[];
-  crews: Crew[];
-  workItems: TextItem[];
+  contractors: ContractorEntry[]; // unified contractors + work performed
   delays: TextItem[];
   tradesOnsite: TextItem[];
   meetings: TextItem[];
@@ -40,20 +38,18 @@ interface Subcontractor {
   name: string;
 }
 
-interface Crew {
-  id: string;
-  name: string;
-  members: CrewMember[];
-}
-
-interface CrewMember {
-  id: string;
-  name: string;
-}
-
 interface TextItem {
   id: string;
   text: string;
+}
+
+interface ContractorEntry {
+  id: string;               // internal uid for UI
+  subcontractorId: string;  // FK to subcontractors table
+  name: string;
+  crewCount: number;
+  crewNames: string;        // optional free text
+  workPerformed: string;    // description
 }
 
 interface SectionProps {
@@ -92,7 +88,7 @@ interface AutocompleteProps {
 function AssignedToAutocomplete({ value, onChange, crewMembers, subcontractors, placeholder }: AutocompleteProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState(value);
-  
+
   useEffect(() => {
     setInputValue(value);
   }, [value]);
@@ -100,7 +96,7 @@ function AssignedToAutocomplete({ value, onChange, crewMembers, subcontractors, 
   // Combine crew members and subcontractors into assignee options
   const assigneeOptions = React.useMemo(() => {
     const options: Array<{ id: string; name: string; type: 'crew' | 'subcontractor'; details?: string }> = [];
-    
+
     // Add crew members - flatten crew members from all crews
     crewMembers.forEach(crew => {
       if (crew.members) {
@@ -114,7 +110,7 @@ function AssignedToAutocomplete({ value, onChange, crewMembers, subcontractors, 
         });
       }
     });
-    
+
     // Add subcontractors
     subcontractors.forEach(sub => {
       options.push({
@@ -124,7 +120,7 @@ function AssignedToAutocomplete({ value, onChange, crewMembers, subcontractors, 
         details: ''
       });
     });
-    
+
     return options;
   }, [crewMembers, subcontractors]);
 
@@ -167,7 +163,7 @@ function AssignedToAutocomplete({ value, onChange, crewMembers, subcontractors, 
         className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         placeholder={placeholder || "Type to search crew/contractors or enter custom name"}
       />
-      
+
       {isOpen && (filteredOptions.length > 0 || inputValue.trim()) && (
         <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
           {filteredOptions.length > 0 && (
@@ -184,11 +180,10 @@ function AssignedToAutocomplete({ value, onChange, crewMembers, subcontractors, 
                       <span className="text-sm text-gray-500 ml-2">{option.details}</span>
                     )}
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded ${
-                    option.type === 'crew' 
-                      ? 'bg-blue-100 text-blue-700' 
-                      : 'bg-green-100 text-green-700'
-                  }`}>
+                  <span className={`text-xs px-2 py-1 rounded ${option.type === 'crew'
+                    ? 'bg-blue-100 text-blue-700'
+                    : 'bg-green-100 text-green-700'
+                    }`}>
                     {option.type === 'crew' ? 'Crew' : 'Contractor'}
                   </span>
                 </div>
@@ -210,7 +205,7 @@ function AssignedToAutocomplete({ value, onChange, crewMembers, subcontractors, 
               )}
             </>
           )}
-          
+
           {filteredOptions.length === 0 && inputValue.trim() && (
             <div className="px-3 py-2">
               <div
@@ -255,7 +250,7 @@ const Section: React.FC<SectionProps> = ({ title, icon: Icon, children, showActi
           assignedTo: actionFormData.assignedTo,
           dueDate: actionFormData.dueDate
         });
-        
+
         // Reset form and close modal
         setActionFormData({
           title: '',
@@ -277,7 +272,7 @@ const Section: React.FC<SectionProps> = ({ title, icon: Icon, children, showActi
   const getSourceType = () => {
     const sourceTypeMap: { [key: string]: string } = {
       'meetings': 'meeting',
-      'outOfScope': 'out_of_scope', 
+      'outOfScope': 'out_of_scope',
       'workItems': 'action_item',
       'delays': 'observation',
       'tradesOnsite': 'observation',
@@ -304,7 +299,7 @@ const Section: React.FC<SectionProps> = ({ title, icon: Icon, children, showActi
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Add New Action Item</h2>
-            
+
             <form onSubmit={(e) => { e.preventDefault(); handleCreateAction(); }} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
@@ -458,17 +453,17 @@ const Section: React.FC<SectionProps> = ({ title, icon: Icon, children, showActi
 };
 
 // Text items list component
-const TextItemsList = ({ 
-  items, 
-  setItems, 
+const TextItemsList = ({
+  items,
+  setItems,
   placeholder,
   rows = 3,
   onCreateActionItem,
   sectionType,
   crewMembers = [],
   subcontractors = []
-}: { 
-  items: TextItem[], 
+}: {
+  items: TextItem[],
   setItems: (items: TextItem[]) => void,
   placeholder: string,
   rows?: number,
@@ -484,7 +479,7 @@ const TextItemsList = ({
 }) => {
   // Ensure items is always an array
   const safeItems = Array.isArray(items) ? items : [{ id: generateId(), text: '' }];
-  
+
   // Modal state for individual action items
   const [showActionModal, setShowActionModal] = useState(false);
   const [selectedItemText, setSelectedItemText] = useState('');
@@ -497,13 +492,13 @@ const TextItemsList = ({
     assignedTo: '',
     dueDate: ''
   });
-  
+
   const addItem = () => {
     setItems([...safeItems, { id: generateId(), text: '' }]);
   };
 
   const updateItem = (id: string, text: string) => {
-    setItems(safeItems.map(item => 
+    setItems(safeItems.map(item =>
       item.id === id ? { ...item, text } : item
     ));
   };
@@ -528,7 +523,7 @@ const TextItemsList = ({
       const getSourceType = () => {
         const sourceTypeMap: { [key: string]: string } = {
           'meetings': 'meeting',
-          'outOfScope': 'out_of_scope', 
+          'outOfScope': 'out_of_scope',
           'workItems': 'action_item',
           'delays': 'observation',
           'tradesOnsite': 'observation',
@@ -561,7 +556,7 @@ const TextItemsList = ({
           assignedTo: actionFormData.assignedTo,
           dueDate: actionFormData.dueDate
         });
-        
+
         // Reset form and close modal
         setActionFormData({
           title: '',
@@ -631,7 +626,7 @@ const TextItemsList = ({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-xl font-bold mb-4">Add New Action Item</h2>
-            
+
             <form onSubmit={(e) => { e.preventDefault(); handleCreateAction(); }} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="md:col-span-2">
@@ -785,12 +780,12 @@ const TextItemsList = ({
 };
 
 // Subcontractors management component
-const SubcontractorManager = ({ 
-  subcontractors, 
+const SubcontractorManager = ({
+  subcontractors,
   setSubcontractors,
-  availableSubcontractors 
-}: { 
-  subcontractors: Subcontractor[], 
+  availableSubcontractors
+}: {
+  subcontractors: Subcontractor[],
   setSubcontractors: (subs: Subcontractor[]) => void,
   availableSubcontractors: Subcontractor[]
 }) => {
@@ -798,13 +793,13 @@ const SubcontractorManager = ({
 
   const addSubcontractor = () => {
     if (!selectedSubcontractorId) return;
-    
+
     const subcontractor = availableSubcontractors.find(s => s.id === selectedSubcontractorId);
     if (!subcontractor) return;
-    
+
     // Check if already added
     if (subcontractors.find(s => s.id === subcontractor.id)) return;
-    
+
     setSubcontractors([...subcontractors, subcontractor]);
     setSelectedSubcontractorId('');
   };
@@ -859,104 +854,16 @@ const SubcontractorManager = ({
   );
 };
 
-// Crews management component
-const CrewManager = ({ 
-  crews, 
-  setCrews,
-  availableCrews 
-}: { 
-  crews: Crew[], 
-  setCrews: (crews: Crew[]) => void,
-  availableCrews: Crew[]
-}) => {
-  const [selectedCrewId, setSelectedCrewId] = useState('');
-  
-  const addCrew = () => {
-    if (!selectedCrewId) return;
-    
-    const crew = availableCrews.find(c => c.id === selectedCrewId);
-    if (!crew) return;
-    
-    // Check if already added
-    if (crews.find(c => c.id === crew.id)) return;
-    
-    setCrews([...crews, crew]);
-    setSelectedCrewId('');
-  };
-
-  const removeCrew = (crewId: string) => {
-    setCrews(crews.filter(crew => crew.id !== crewId));
-  };
-
-  return (
-    <div>
-      <div className="flex gap-2 mb-4">
-        <select
-          value={selectedCrewId}
-          onChange={(e) => setSelectedCrewId(e.target.value)}
-          className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        >
-          <option value="">Select a crew</option>
-          {availableCrews
-            .filter(crew => !crews.find(c => c.id === crew.id))
-            .map(crew => (
-              <option key={crew.id} value={crew.id}>{crew.name}</option>
-            ))
-          }
-        </select>
-        <button
-          onClick={addCrew}
-          className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-          type="button"
-          disabled={!selectedCrewId}
-        >
-          <Plus className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="space-y-4">
-        {crews.map(crew => (
-          <div key={crew.id} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="font-semibold text-gray-800">{crew.name}</h4>
-              <button
-                onClick={() => removeCrew(crew.id)}
-                className="text-red-600 hover:text-red-800"
-                type="button"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
-            </div>
-            
-            <div className="space-y-2">
-              {crew.members.map(member => (
-                <div key={member.id} className="flex items-center justify-between p-2 bg-white rounded-md border">
-                  <span className="text-sm">{member.name}</span>
-                </div>
-              ))}
-              {crew.members.length === 0 && (
-                <p className="text-gray-500 text-sm italic">No team members in this crew</p>
-              )}
-            </div>
-          </div>
-        ))}
-        {crews.length === 0 && (
-          <p className="text-gray-500 italic">No crews selected</p>
-        )}
-      </div>
-    </div>
-  );
-};
-
 // Trades list component
-const TradesList = ({ 
-  trades, 
+const TradesList = ({
+  trades,
   setTrades,
   onCreateActionItem,
   sectionType,
   crewMembers = [],
   subcontractors = []
-}: { 
-  trades: TextItem[], 
+}: {
+  trades: TextItem[],
   setTrades: (trades: TextItem[]) => void,
   onCreateActionItem?: (sectionType: string, title: string, details?: {
     description?: string;
@@ -970,7 +877,7 @@ const TradesList = ({
 }) => {
   // Ensure trades is always an array
   const safeTrades = Array.isArray(trades) ? trades : [{ id: generateId(), text: '' }];
-  
+
   // Modal state for individual action items
   const [showActionModal, setShowActionModal] = useState(false);
   const [selectedTradeText, setSelectedTradeText] = useState('');
@@ -983,13 +890,13 @@ const TradesList = ({
     assignedTo: '',
     dueDate: ''
   });
-  
+
   const addTrade = () => {
     setTrades([...safeTrades, { id: generateId(), text: '' }]);
   };
 
   const updateTrade = (id: string, text: string) => {
-    setTrades(safeTrades.map(trade => 
+    setTrades(safeTrades.map(trade =>
       trade.id === id ? { ...trade, text } : trade
     ));
   };
@@ -1030,7 +937,7 @@ const TradesList = ({
           assignedTo: actionFormData.assignedTo,
           dueDate: actionFormData.dueDate
         });
-        
+
         // Reset form and close modal
         setActionFormData({
           title: '',
@@ -1051,205 +958,205 @@ const TradesList = ({
   return (
     <>
       <div>
-      {safeTrades.map(trade => (
-        <div key={trade.id} className="flex gap-2 mb-3">
-          <input
-            type="text"
-            value={trade.text}
-            onChange={(e) => updateTrade(trade.id, e.target.value)}
-            placeholder="Enter trade name (e.g., JLS, HTI - windows and sliders, OJV - Sheet Metal)"
-            className="flex-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-          <div className="flex flex-col gap-1">
-            {/* Action Item button - only show if there's text and we have the create function */}
-            {trade.text.trim() && onCreateActionItem && sectionType && (
+        {safeTrades.map(trade => (
+          <div key={trade.id} className="flex gap-2 mb-3">
+            <input
+              type="text"
+              value={trade.text}
+              onChange={(e) => updateTrade(trade.id, e.target.value)}
+              placeholder="Enter trade name (e.g., JLS, HTI - windows and sliders, OJV - Sheet Metal)"
+              className="flex-1 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <div className="flex flex-col gap-1">
+              {/* Action Item button - only show if there's text and we have the create function */}
+              {trade.text.trim() && onCreateActionItem && sectionType && (
+                <button
+                  onClick={() => handleCreateActionFromTrade(trade.text)}
+                  className="bg-green-600 text-white px-2 py-2 rounded-md text-xs hover:bg-green-700 transition-colors flex items-center gap-1"
+                  type="button"
+                  title="Create Action Item from this trade"
+                >
+                  <Plus className="h-3 w-3" />
+                  Action
+                </button>
+              )}
+              {/* Trash button */}
               <button
-                onClick={() => handleCreateActionFromTrade(trade.text)}
-                className="bg-green-600 text-white px-2 py-2 rounded-md text-xs hover:bg-green-700 transition-colors flex items-center gap-1"
+                onClick={() => removeTrade(trade.id)}
+                className="text-red-600 hover:text-red-800 p-2"
                 type="button"
-                title="Create Action Item from this trade"
+                title="Remove trade"
               >
-                <Plus className="h-3 w-3" />
-                Action
+                <Trash2 className="h-4 w-4" />
               </button>
-            )}
-            {/* Trash button */}
-            <button
-              onClick={() => removeTrade(trade.id)}
-              className="text-red-600 hover:text-red-800 p-2"
-              type="button"
-              title="Remove trade"
-            >
-              <Trash2 className="h-4 w-4" />
-            </button>
+            </div>
+          </div>
+        ))}
+        <button
+          onClick={addTrade}
+          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
+          type="button"
+        >
+          <Plus className="h-4 w-4" />
+          Add Trade
+        </button>
+      </div>
+
+      {/* Action Item Creation Modal */}
+      {showActionModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <h2 className="text-xl font-bold mb-4">Add New Action Item</h2>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleCreateAction(); }} className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Title *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={actionFormData.title}
+                    onChange={(e) => setActionFormData({ ...actionFormData, title: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter action item title"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Description
+                  </label>
+                  <textarea
+                    value={actionFormData.description}
+                    onChange={(e) => setActionFormData({ ...actionFormData, description: e.target.value })}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    placeholder="Enter detailed description"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Source Type
+                  </label>
+                  <select
+                    value={actionFormData.source_type}
+                    onChange={(e) => setActionFormData({ ...actionFormData, source_type: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="action_item">Action Item</option>
+                    <option value="meeting">Meeting/Discussion</option>
+                    <option value="out_of_scope">Out-of-Scope Work</option>
+                    <option value="observation">Observation/Note</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Project
+                  </label>
+                  <select
+                    value=""
+                    disabled
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
+                  >
+                    <option value="">Will use current project</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Assigned To
+                  </label>
+                  <AssignedToAutocomplete
+                    value={actionFormData.assignedTo}
+                    onChange={(value) => setActionFormData({ ...actionFormData, assignedTo: value })}
+                    crewMembers={crewMembers}
+                    subcontractors={subcontractors}
+                    placeholder="Type to search crew/contractors or enter custom name"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Priority
+                  </label>
+                  <select
+                    value={actionFormData.priority}
+                    onChange={(e) => setActionFormData({ ...actionFormData, priority: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="urgent">Urgent</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Status
+                  </label>
+                  <select
+                    value={actionFormData.status}
+                    onChange={(e) => setActionFormData({ ...actionFormData, status: e.target.value as any })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value="open">Open</option>
+                    <option value="in_progress">In Progress</option>
+                    <option value="completed">Completed</option>
+                    <option value="on_hold">On Hold</option>
+                    <option value="cancelled">Cancelled</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Due Date
+                  </label>
+                  <input
+                    type="date"
+                    value={actionFormData.dueDate}
+                    onChange={(e) => setActionFormData({ ...actionFormData, dueDate: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowActionModal(false);
+                    setActionFormData({
+                      title: '',
+                      description: '',
+                      source_type: 'action_item',
+                      priority: 'medium',
+                      status: 'open',
+                      assignedTo: '',
+                      dueDate: ''
+                    });
+                  }}
+                  className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!actionFormData.title.trim()}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+                >
+                  Add Action Item
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      ))}
-      <button
-        onClick={addTrade}
-        className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors"
-        type="button"
-      >
-        <Plus className="h-4 w-4" />
-        Add Trade
-      </button>
-    </div>
-
-    {/* Action Item Creation Modal */}
-    {showActionModal && (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-        <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-          <h2 className="text-xl font-bold mb-4">Add New Action Item</h2>
-          
-          <form onSubmit={(e) => { e.preventDefault(); handleCreateAction(); }} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Title *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={actionFormData.title}
-                  onChange={(e) => setActionFormData({ ...actionFormData, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter action item title"
-                />
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={actionFormData.description}
-                  onChange={(e) => setActionFormData({ ...actionFormData, description: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter detailed description"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Source Type
-                </label>
-                <select
-                  value={actionFormData.source_type}
-                  onChange={(e) => setActionFormData({ ...actionFormData, source_type: e.target.value as any })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="action_item">Action Item</option>
-                  <option value="meeting">Meeting/Discussion</option>
-                  <option value="out_of_scope">Out-of-Scope Work</option>
-                  <option value="observation">Observation/Note</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Project
-                </label>
-                <select
-                  value=""
-                  disabled
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-500"
-                >
-                  <option value="">Will use current project</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Assigned To
-                </label>
-                <AssignedToAutocomplete
-                  value={actionFormData.assignedTo}
-                  onChange={(value) => setActionFormData({ ...actionFormData, assignedTo: value })}
-                  crewMembers={crewMembers}
-                  subcontractors={subcontractors}
-                  placeholder="Type to search crew/contractors or enter custom name"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Priority
-                </label>
-                <select
-                  value={actionFormData.priority}
-                  onChange={(e) => setActionFormData({ ...actionFormData, priority: e.target.value as any })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="low">Low</option>
-                  <option value="medium">Medium</option>
-                  <option value="high">High</option>
-                  <option value="urgent">Urgent</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Status
-                </label>
-                <select
-                  value={actionFormData.status}
-                  onChange={(e) => setActionFormData({ ...actionFormData, status: e.target.value as any })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="open">Open</option>
-                  <option value="in_progress">In Progress</option>
-                  <option value="completed">Completed</option>
-                  <option value="on_hold">On Hold</option>
-                  <option value="cancelled">Cancelled</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Due Date
-                </label>
-                <input
-                  type="date"
-                  value={actionFormData.dueDate}
-                  onChange={(e) => setActionFormData({ ...actionFormData, dueDate: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-3 pt-4">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowActionModal(false);
-                  setActionFormData({
-                    title: '',
-                    description: '',
-                    source_type: 'action_item',
-                    priority: 'medium',
-                    status: 'open',
-                    assignedTo: '',
-                    dueDate: ''
-                  });
-                }}
-                className="px-4 py-2 text-gray-700 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={!actionFormData.title.trim()}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
-              >
-                Add Action Item
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    )}
-  </>
+      )}
+    </>
   );
 };
 
@@ -1258,10 +1165,10 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
   ({ logData }, ref) => {
     const formatDate = (dateString: string) => {
       const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
       });
     };
 
@@ -1474,7 +1381,7 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
             }
           }
         `}</style>
-        
+
         <div className="print:block print:w-full print:h-full print:p-8 print:bg-white print:text-black">
           {/* Header */}
           <div className="print:text-center print:mb-8">
@@ -1494,84 +1401,31 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
 
           {/* Content Sections */}
           <div className="print:space-y-6">
-            {/* Subcontractors and Crews */}
-            <div className="print:grid print:grid-cols-2 print:gap-8 print:mb-6">
-              <div>
-                <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                  Subcontractors on Site
-                </h3>
-                {logData.subcontractors.length > 0 ? (
-                  <ul className="print:list-disc print:list-inside print:space-y-1">
-                    {logData.subcontractors.map(sub => (
-                      <li key={sub.id} className="print:text-black">{sub.name}</li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="print:text-black print:italic">No subcontractors on site</p>
-                )}
-              </div>
-              
-              <div>
-                <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                  Crews on Site
-                </h3>
-                {logData.crews.length > 0 ? (
-                  <div className="print:space-y-2">
-                    {logData.crews.map(crew => (
-                      <div key={crew.id}>
-                        <div className="print:font-semibold print:text-black">{crew.name}</div>
-                        {crew.members.length > 0 && (
-                          <ul className="print:list-disc print:list-inside print:ml-4 print:space-y-1">
-                            {crew.members.map(member => (
-                              <li key={member.id} className="print:text-black print:text-sm">{member.name}</li>
-                            ))}
-                          </ul>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="print:text-black print:italic">No crews on site</p>
-                )}
-              </div>
-            </div>
-
-            {/* Work Items */}
+            {/* Contractors */}
             <div className="print:mb-6">
               <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                1. Work Performed (All Trades)
+                Contractors (Crew & Work Performed)
               </h3>
-              {logData.workItems.filter(item => item.text.trim()).length > 0 ? (
-                <ul className="print:list-disc print:list-inside print:space-y-2">
-                  {logData.workItems.filter(item => item.text.trim()).map(item => (
-                    <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
+              {logData.contractors.length > 0 ? (
+                <div className="print:space-y-3">
+                  {logData.contractors.map(contractor => (
+                    <div key={contractor.id} className="print:text-black print:leading-relaxed print:whitespace-pre-wrap print:border-l-2 print:border-gray-300 print:pl-4">
+                      <strong>{contractor.name}</strong>
+                      <p>Crew Count: {contractor.crewCount}</p>
+                      {contractor.crewNames && <p>Crew Names: {contractor.crewNames}</p>}
+                      <p>Work Performed: {contractor.workPerformed}</p>
+                    </div>
                   ))}
-                </ul>
+                </div>
               ) : (
-                <p className="print:text-black print:italic">No work items recorded</p>
+                <p className="print:text-black print:italic">No contractors recorded</p>
               )}
             </div>
 
-            {/* Delays */}
+            {/* Visitors on site */}
             <div className="print:mb-6">
               <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                2. Delays / Disruptions
-              </h3>
-              {logData.delays.filter(item => item.text.trim()).length > 0 ? (
-                <ul className="print:list-disc print:list-inside print:space-y-2">
-                  {logData.delays.filter(item => item.text.trim()).map(item => (
-                    <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="print:text-black print:italic">No delays or disruptions</p>
-              )}
-            </div>
-
-            {/* Trades Onsite */}
-            <div className="print:mb-6">
-              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                3. Trades Onsite
+                2. Visitors on site
               </h3>
               {logData.tradesOnsite.filter(item => item.text.trim()).length > 0 ? (
                 <ul className="print:list-disc print:list-inside print:space-y-2">
@@ -1587,7 +1441,7 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
             {/* Meetings */}
             <div className="print:mb-6">
               <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                4. Meetings / Discussions
+                3. Meetings / Discussions
               </h3>
               {logData.meetings.filter(item => item.text.trim()).length > 0 ? (
                 <div className="print:space-y-3">
@@ -1605,7 +1459,7 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
             {/* Out of Scope */}
             <div className="print:mb-6">
               <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                5. Out-of-Scope / Extra Work Identified
+                4. Out-of-Scope / Extra Work Identified
               </h3>
               {logData.outOfScope.filter(item => item.text.trim()).length > 0 ? (
                 <ul className="print:list-disc print:list-inside print:space-y-2">
@@ -1618,26 +1472,26 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
               )}
             </div>
 
-            {/* Next Day Plan */}
+            {/* Delays */}
             <div className="print:mb-6">
               <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                6. Plan for Next Day (All Trades)
+                5. Delays / Disruptions
               </h3>
-              {logData.nextDayPlan.filter(item => item.text.trim()).length > 0 ? (
+              {logData.delays.filter(item => item.text.trim()).length > 0 ? (
                 <ul className="print:list-disc print:list-inside print:space-y-2">
-                  {logData.nextDayPlan.filter(item => item.text.trim()).map(item => (
+                  {logData.delays.filter(item => item.text.trim()).map(item => (
                     <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
                   ))}
                 </ul>
               ) : (
-                <p className="print:text-black print:italic">No plans recorded for next day</p>
+                <p className="print:text-black print:italic">No delays or disruptions</p>
               )}
             </div>
 
             {/* Notes */}
             <div className="print:mb-6">
               <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
-                7. Notes / Observations
+                6. Notes / Observations
               </h3>
               {logData.notes.filter(item => item.text.trim()).length > 0 ? (
                 <div className="print:space-y-3">
@@ -1651,8 +1505,24 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
                 <p className="print:text-black print:italic">No notes or observations</p>
               )}
             </div>
+
+            {/* Plan for Next Day/Week */}
+            <div className="print:mb-6">
+              <h3 className="print:font-bold print:text-lg print:mb-3 print:text-black print:border-b print:border-black print:pb-1">
+                7. Plan for Next Day/Week (All Trades)
+              </h3>
+              {logData.nextDayPlan.filter(item => item.text.trim()).length > 0 ? (
+                <ul className="print:list-disc print:list-inside print:space-y-2">
+                  {logData.nextDayPlan.filter(item => item.text.trim()).map(item => (
+                    <li key={item.id} className="print:text-black print:leading-relaxed">{item.text}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="print:text-black print:italic">No plans recorded for next day</p>
+              )}
+            </div>
           </div>
-          
+
           {/* Footer */}
           <div className="print:mt-8 print:pt-4 print:border-t print:border-black print:text-sm print:text-center">
             <p className="print:text-black">
@@ -1667,19 +1537,135 @@ const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
 
 PrintView.displayName = 'PrintView';
 
+// NEW ContractorsManager component
+const ContractorsManager = ({
+  contractors,
+  setContractors,
+  availableSubcontractors
+}: {
+  contractors: ContractorEntry[];
+  setContractors: (c: ContractorEntry[]) => void;
+  availableSubcontractors: Subcontractor[];
+}) => {
+  const [selectedId, setSelectedId] = useState('');
+  const addContractor = () => {
+    if (!selectedId) return;
+    const sub = availableSubcontractors.find(s => s.id === selectedId);
+    if (!sub) return;
+    if (contractors.find(c => c.subcontractorId === sub.id)) return;
+    setContractors([
+      ...contractors,
+      {
+        id: generateId(),
+        subcontractorId: sub.id,
+        name: sub.name,
+        crewCount: 0,
+        crewNames: '',
+        workPerformed: ''
+      }
+    ]);
+    setSelectedId('');
+  };
+  const update = (id: string, patch: Partial<ContractorEntry>) =>
+    setContractors(contractors.map(c => c.id === id ? { ...c, ...patch } : c));
+  const remove = (id: string) =>
+    setContractors(contractors.filter(c => c.id !== id));
+  return (
+    <div>
+      <div className="flex gap-2 mb-4">
+        <select
+          value={selectedId}
+          onChange={e => setSelectedId(e.target.value)}
+          className="flex-1 p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        >
+          <option value="">Select a contractor</option>
+          {availableSubcontractors
+            .filter(s => !contractors.find(c => c.subcontractorId === s.id))
+            .map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+        <button
+          onClick={addContractor}
+          disabled={!selectedId}
+          className="px-3 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+          type="button"
+        >
+          <Plus className="h-4 w-4" />
+        </button>
+      </div>
+      {contractors.length === 0 && (
+        <p className="text-gray-500 italic">No contractors added</p>
+      )}
+      <div className="space-y-4">
+        {contractors.map(c => (
+          <div key={c.id} className="p-4 border border-gray-200 rounded-lg bg-gray-50 space-y-3">
+            <div className="flex justify-between items-center">
+              <h4 className="font-semibold text-sm">{c.name}</h4>
+              <button
+                onClick={() => remove(c.id)}
+                className="text-red-600 hover:text-red-800 text-sm"
+                type="button"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="grid md:grid-cols-3 gap-4">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Crew Count
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  value={c.crewCount}
+                  onChange={e => update(c.id, { crewCount: parseInt(e.target.value || '0', 10) })}
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Crew Names (optional)
+                </label>
+                <textarea
+                  rows={2}
+                  value={c.crewNames}
+                  onChange={e => update(c.id, { crewNames: e.target.value })}
+                  placeholder="List crew members..."
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+              <div className="md:col-span-3">
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Work Performed
+                </label>
+                <textarea
+                  rows={3}
+                  value={c.workPerformed}
+                  onChange={e => update(c.id, { workPerformed: e.target.value })}
+                  placeholder="Describe work performed..."
+                  className="w-full p-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
 // Main ConstructionDailyLog component
 const ConstructionDailyLog = () => {
   // Ensure all items have default arrays with at least one item
   const createDefaultItem = () => ({ id: generateId(), text: '' });
   const createDefaultArray = () => [createDefaultItem()];
-  
+
   const createDefaultCrewMember = (name: string) => ({ id: generateId(), name });
   const createDefaultCrew = (name: string, members: string[] = []) => ({
     id: generateId(),
     name,
     members: members.map(name => createDefaultCrewMember(name))
   });
-  
+
   // Initialize state with unique IDs for all items
   const [logData, setLogData] = useState<DailyLogData>({
     id: generateId(),
@@ -1687,9 +1673,7 @@ const ConstructionDailyLog = () => {
     superintendentName: '',
     projectId: null,
     projectName: '',
-    subcontractors: [],
-    crews: [],
-    workItems: createDefaultArray(),
+    contractors: [],
     delays: createDefaultArray(),
     tradesOnsite: createDefaultArray(),
     meetings: createDefaultArray(),
@@ -1701,7 +1685,6 @@ const ConstructionDailyLog = () => {
   // Additional state for Supabase integration
   const [projects, setProjects] = useState<Project[]>([]);
   const [availableSubcontractors, setAvailableSubcontractors] = useState<Subcontractor[]>([]);
-  const [availableCrews, setAvailableCrews] = useState<Crew[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -1717,13 +1700,13 @@ const ConstructionDailyLog = () => {
   const fetchInitialData = async () => {
     try {
       setLoading(true);
-      
+
       // Fetch projects
       const { data: projectsData, error: projectsError } = await supabase
         .from('projects')
         .select('id, name, location, client')
         .order('name');
-      
+
       if (projectsError) throw projectsError;
       setProjects(projectsData || []);
 
@@ -1732,34 +1715,10 @@ const ConstructionDailyLog = () => {
         .from('subcontractors')
         .select('id, name')
         .order('name');
-      
+
       if (subcontractorsError) throw subcontractorsError;
       setAvailableSubcontractors(subcontractorsData || []);
 
-      // Fetch crews with members
-      const { data: crewsData, error: crewsError } = await supabase
-        .from('crews')
-        .select(`
-          id,
-          name,
-          crew_members(id, name, role)
-        `)
-        .order('name');
-      
-      if (crewsError) throw crewsError;
-      
-      // Transform crew data to match our interface
-      const transformedCrews = (crewsData || []).map(crew => ({
-        id: crew.id,
-        name: crew.name,
-        members: (crew.crew_members || []).map((member: any) => ({
-          id: member.id,
-          name: member.name
-        }))
-      }));
-      
-      setAvailableCrews(transformedCrews);
-      
     } catch (error: any) {
       console.error('Error fetching initial data:', error);
       setError(error.message || 'Failed to load data');
@@ -1778,8 +1737,8 @@ const ConstructionDailyLog = () => {
 
   const handleProjectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
     const selectedProject = projects.find(p => p.id === e.target.value);
-    setLogData(prev => ({ 
-      ...prev, 
+    setLogData(prev => ({
+      ...prev,
       projectId: e.target.value || null,
       projectName: selectedProject?.name || ''
     }));
@@ -1817,7 +1776,7 @@ const ConstructionDailyLog = () => {
 
       // Add all sections with content
       const sectionMap = [
-        { type: 'work_performed', items: logData.workItems },
+        // contractors handled separately via contractor_work
         { type: 'delays', items: logData.delays },
         { type: 'trades_onsite', items: logData.tradesOnsite },
         { type: 'meetings', items: logData.meetings },
@@ -1839,6 +1798,22 @@ const ConstructionDailyLog = () => {
         }
       }
 
+      // Append contractor_work entries
+      for (const contractor of logData.contractors) {
+        const payload = {
+          subcontractor_id: contractor.subcontractorId,
+          crewCount: contractor.crewCount,
+          crewNames: contractor.crewNames,
+          workPerformed: contractor.workPerformed
+        };
+        logSections.push({
+          log_id: logId,
+          section_type: 'contractor_work',
+          content: JSON.stringify(payload),
+          order_num: orderNum++
+        });
+      }
+
       // Save log sections
       if (logSections.length > 0) {
         const { error: sectionsError } = await supabase
@@ -1849,9 +1824,9 @@ const ConstructionDailyLog = () => {
       }
 
       // Save subcontractor associations
-      const subcontractorAssociations = logData.subcontractors.map(sub => ({
+      const subcontractorAssociations = logData.contractors.map(c => ({
         log_id: logId,
-        subcontractor_id: sub.id
+        subcontractor_id: c.subcontractorId
       }));
 
       if (subcontractorAssociations.length > 0) {
@@ -1862,25 +1837,11 @@ const ConstructionDailyLog = () => {
         if (subcontractorsError) throw subcontractorsError;
       }
 
-      // Save crew associations
-      const crewAssociations = logData.crews.map(crew => ({
-        log_id: logId,
-        crew_id: crew.id
-      }));
-
-      if (crewAssociations.length > 0) {
-        const { error: crewsError } = await supabase
-          .from('log_crews')
-          .insert(crewAssociations);
-
-        if (crewsError) throw crewsError;
-      }
-
       setSuccess('Daily log saved successfully!');
-      
+
       // Optionally redirect or reset form
       // window.location.href = '/dashboard';
-      
+
     } catch (error: any) {
       console.error('Error saving daily log:', error);
       setError(error.message || 'Failed to save daily log');
@@ -1894,14 +1855,32 @@ const ConstructionDailyLog = () => {
       // Show loading state
       setSaving(true);
       setError('');
-      
+
       // Prepare the data to send to the API
       const response = await fetch('/api/generate-pdf', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(logData),
+        body: JSON.stringify({
+          id: logData.id,
+          date: logData.date,
+          superintendentName: logData.superintendentName,
+          projectId: logData.projectId,
+          projectName: logData.projectName,
+          contractors: logData.contractors.map(c => ({
+            name: c.name,
+            crewCount: c.crewCount,
+            crewNames: c.crewNames,
+            workPerformed: c.workPerformed
+          })),
+          delays: logData.delays,
+          tradesOnsite: logData.tradesOnsite,
+          meetings: logData.meetings,
+          outOfScope: logData.outOfScope,
+          nextDayPlan: logData.nextDayPlan,
+          notes: logData.notes
+        }),
       });
 
       if (!response.ok) {
@@ -1910,21 +1889,21 @@ const ConstructionDailyLog = () => {
 
       // Get the PDF blob
       const blob = await response.blob();
-      
+
       // Create download link
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `Daily_Log_${(logData.projectName || 'Unknown').replace(/[^a-zA-Z0-9]/g, '_')}_${logData.date}.pdf`;
-      
+
       // Trigger download
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
+
       // Clean up
       window.URL.revokeObjectURL(url);
-      
+
       setSuccess('PDF generated successfully!');
     } catch (error: any) {
       console.error('Error generating PDF:', error);
@@ -1944,7 +1923,7 @@ const ConstructionDailyLog = () => {
       // Map section types to source types
       const sourceTypeMap: { [key: string]: string } = {
         'meetings': 'meeting',
-        'outOfScope': 'out_of_scope', 
+        'outOfScope': 'out_of_scope',
         'workItems': 'action_item',
         'delays': 'observation',
         'tradesOnsite': 'observation',
@@ -1978,14 +1957,14 @@ const ConstructionDailyLog = () => {
       if (error) throw error;
 
       setSuccess('Action item created successfully!');
-      
+
       // Clear success message after 3 seconds
       setTimeout(() => setSuccess(''), 3000);
-      
+
     } catch (error: any) {
       console.error('Error creating action item:', error);
       setError(error.message || 'Failed to create action item');
-      
+
       // Clear error message after 5 seconds
       setTimeout(() => setError(''), 5000);
     }
@@ -2002,7 +1981,7 @@ const ConstructionDailyLog = () => {
               <h1 className="text-2xl font-bold text-gray-800">Construction Daily Log</h1>
             </div>
             <div className="flex gap-3">
-              <Link 
+              <Link
                 href="/dashboard"
                 className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
               >
@@ -2037,7 +2016,7 @@ const ConstructionDailyLog = () => {
               {error}
             </div>
           )}
-          
+
           {success && (
             <div className="mb-4 p-3 bg-green-100 text-green-700 rounded-md">
               {success}
@@ -2093,132 +2072,111 @@ const ConstructionDailyLog = () => {
         </div>
 
         {/* Manage Subcontractors and Crews */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-          <Section title="Manage Subcontractors" icon={Users}>
-            <SubcontractorManager 
-              subcontractors={logData.subcontractors} 
-              setSubcontractors={(newSubs: Subcontractor[]) => setLogData(prev => ({ ...prev, subcontractors: newSubs }))}
+        <div className="mb-6">
+          <Section title="1. Contractors (Crew & Work Performed)" icon={Users}>
+            <ContractorsManager
+              contractors={logData.contractors}
+              setContractors={(newC: ContractorEntry[]) => setLogData(prev => ({ ...prev, contractors: newC }))}
               availableSubcontractors={availableSubcontractors}
-            />
-          </Section>
-
-          <Section title="Manage Crews" icon={Users}>
-            <CrewManager 
-              crews={logData.crews} 
-              setCrews={(newCrews: Crew[]) => setLogData(prev => ({ ...prev, crews: newCrews }))}
-              availableCrews={availableCrews}
             />
           </Section>
         </div>
 
-        {/* Work Performed */}
-        <Section title="1. Work Performed (All Trades)" icon={Wrench}>
-          <TextItemsList 
-            items={logData.workItems || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, workItems: newItems }))} 
-            placeholder="Describe work performed..."
-            onCreateActionItem={createActionItem}
-            sectionType="workItems"
-            crewMembers={availableCrews}
-            subcontractors={availableSubcontractors}
-          />
-        </Section>
-
-        {/* Delays */}
-        <Section title="2. Delays / Disruptions" icon={AlertTriangle}>
-          <TextItemsList 
-            items={logData.delays || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, delays: newItems }))} 
-            placeholder="Describe delays or disruptions..."
-            onCreateActionItem={createActionItem}
-            sectionType="delays"
-            crewMembers={availableCrews}
-            subcontractors={availableSubcontractors}
-          />
-        </Section>
-
-        {/* Trades Onsite */}
-        <Section title="3. Trades Onsite" icon={Users}>
-          <TradesList 
-            trades={logData.tradesOnsite || createDefaultArray()} 
-            setTrades={(newTrades: TextItem[]) => setLogData(prev => ({ ...prev, tradesOnsite: newTrades }))} 
+        {/* 2. Visitors on site (was Trades Onsite) */}
+        <Section title="2. Visitors on site" icon={Users}>
+          <TradesList
+            trades={logData.tradesOnsite || createDefaultArray()}
+            setTrades={(newTrades: TextItem[]) => setLogData(prev => ({ ...prev, tradesOnsite: newTrades }))}
             onCreateActionItem={createActionItem}
             sectionType="tradesOnsite"
-            crewMembers={availableCrews}
+            crewMembers={[]}
             subcontractors={availableSubcontractors}
           />
         </Section>
 
-        {/* Meetings */}
-        <Section 
-          title="4. Meetings / Discussions" 
+        {/* 3. Meetings */}
+        <Section
+          title="3. Meetings / Discussions"
           icon={MessageSquare}
           onCreateActionItem={createActionItem}
           sectionType="meetings"
-          crewMembers={availableCrews}
+          crewMembers={[]}
           subcontractors={availableSubcontractors}
         >
-          <TextItemsList 
-            items={logData.meetings || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, meetings: newItems }))} 
+          <TextItemsList
+            items={logData.meetings || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, meetings: newItems }))}
             placeholder="Describe meetings and discussions..."
             rows={4}
             onCreateActionItem={createActionItem}
             sectionType="meetings"
-            crewMembers={availableCrews}
+            crewMembers={[]}
             subcontractors={availableSubcontractors}
           />
         </Section>
 
-        {/* Out of Scope */}
-        <Section 
-          title="5. Out-of-Scope / Extra Work Identified" 
+        {/* 4. Out-of-Scope */}
+        <Section
+          title="4. Out-of-Scope / Extra Work Identified"
           icon={FileText}
           onCreateActionItem={createActionItem}
           sectionType="outOfScope"
-          crewMembers={availableCrews}
+          crewMembers={[]}
           subcontractors={availableSubcontractors}
         >
-          <TextItemsList 
-            items={logData.outOfScope || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, outOfScope: newItems }))} 
+          <TextItemsList
+            items={logData.outOfScope || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, outOfScope: newItems }))}
             placeholder="Describe out-of-scope or extra work..."
             onCreateActionItem={createActionItem}
             sectionType="outOfScope"
-            crewMembers={availableCrews}
+            crewMembers={[]}
             subcontractors={availableSubcontractors}
           />
         </Section>
 
-        {/* Next Day Plan */}
-        <Section title="6. Plan for Next Day (All Trades)" icon={Calendar}>
-          <TextItemsList 
-            items={logData.nextDayPlan || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, nextDayPlan: newItems }))} 
-            placeholder="Describe tomorrow's plan..."
+        {/* 5. Delays */}
+        <Section title="5. Delays / Disruptions" icon={AlertTriangle}>
+          <TextItemsList
+            items={logData.delays || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, delays: newItems }))}
+            placeholder="Describe delays or disruptions..."
             onCreateActionItem={createActionItem}
-            sectionType="nextDayPlan"
-            crewMembers={availableCrews}
+            sectionType="delays"
+            crewMembers={[]}
             subcontractors={availableSubcontractors}
           />
         </Section>
 
-        {/* Notes */}
-        <Section 
-          title="7. Notes / Observations" 
+        {/* 6. Notes */}
+        <Section
+          title="6. Notes / Observations"
           icon={Eye}
           onCreateActionItem={createActionItem}
           sectionType="notes"
-          crewMembers={availableCrews}
+          crewMembers={[]}
           subcontractors={availableSubcontractors}
         >
-          <TextItemsList 
-            items={logData.notes || createDefaultArray()} 
-            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, notes: newItems }))} 
+          <TextItemsList
+            items={logData.notes || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, notes: newItems }))}
             placeholder="Add notes and observations..."
             onCreateActionItem={createActionItem}
             sectionType="notes"
-            crewMembers={availableCrews}
+            crewMembers={[]}
+            subcontractors={availableSubcontractors}
+          />
+        </Section>
+
+        {/* 7. Plan (renamed) */}
+        <Section title="7. Plan for Next Day/Week (All Trades)" icon={Calendar}>
+          <TextItemsList
+            items={logData.nextDayPlan || createDefaultArray()}
+            setItems={(newItems: TextItem[]) => setLogData(prev => ({ ...prev, nextDayPlan: newItems }))}
+            placeholder="Describe plan for next day/week..."
+            onCreateActionItem={createActionItem}
+            sectionType="nextDayPlan"
+            crewMembers={[]}
             subcontractors={availableSubcontractors}
           />
         </Section>
