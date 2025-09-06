@@ -27,28 +27,26 @@ interface LogData {
       name: string;
     };
   }>;
-  log_crews: Array<{
-    crews: {
-      id: string;
-      name: string;
-      crew_members: Array<{
-        id: string;
-        name: string;
-        role?: string;
-      }>;
-    };
-  }>;
+}
+
+interface ContractorDisplay {
+  subcontractor_id: string;
+  name: string;
+  crewCount: number;
+  crewNames: string;
+  workPerformed: string;
 }
 
 export default function ViewLogPage() {
   const params = useParams();
   const router = useRouter();
   const logId = params.id as string;
-  
+
   const [logData, setLogData] = useState<LogData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [contractors, setContractors] = useState<ContractorDisplay[]>([]);
 
   useEffect(() => {
     if (logId) {
@@ -59,7 +57,7 @@ export default function ViewLogPage() {
   const fetchLogData = async () => {
     try {
       setLoading(true);
-      
+
       const { data, error } = await supabase
         .from('daily_logs')
         .select(`
@@ -82,30 +80,43 @@ export default function ViewLogPage() {
               id,
               name
             )
-          ),
-          log_crews (
-            crews (
-              id,
-              name,
-              crew_members (
-                id,
-                name,
-                role
-              )
-            )
           )
         `)
         .eq('id', logId)
         .single();
 
       if (error) throw error;
-      
+
       if (!data) {
         setError('Log not found');
         return;
       }
 
       setLogData(data as any);
+
+      if (data) {
+        try {
+          const contractorSections = (data.log_sections || []).filter((s: any) => s.section_type === 'contractor_work');
+          const parsed = contractorSections.map((s: any) => {
+            try {
+              const obj = JSON.parse(s.content);
+              const subRel = (data.log_subcontractors || []).find((ls: any) => ls.subcontractors?.id === obj.subcontractor_id);
+              return {
+                subcontractor_id: obj.subcontractor_id,
+                name: subRel?.subcontractors?.name || 'Unknown',
+                crewCount: obj.crewCount ?? 0,
+                crewNames: obj.crewNames ?? '',
+                workPerformed: obj.workPerformed ?? ''
+              } as ContractorDisplay;
+            } catch {
+              return null;
+            }
+          }).filter(Boolean) as ContractorDisplay[];
+          setContractors(parsed);
+        } catch (e) {
+          console.warn('Contractor parse error', e);
+        }
+      }
     } catch (error: any) {
       console.error('Error fetching log data:', error);
       setError(error.message || 'Failed to load log data');
@@ -123,7 +134,7 @@ export default function ViewLogPage() {
 
   const handlePrint = async () => {
     if (!logData) return;
-    
+
     try {
       setIsGeneratingPdf(true);
 
@@ -134,48 +145,19 @@ export default function ViewLogPage() {
         superintendentName: logData.superintendent_name,
         projectName: (Array.isArray(logData.projects) ? logData.projects[0]?.name : logData.projects?.name) || 'No Project',
         projectId: (Array.isArray(logData.projects) ? logData.projects[0]?.id : logData.projects?.id) || null,
-        // Transform sections into arrays by type
-        workItems: getSectionsByType('work_performed').map(section => ({
-          id: section.id,
-          text: section.content
+        contractors: contractors.length > 0 ? contractors : logData.log_subcontractors.map(item => ({
+          subcontractor_id: item.subcontractors.id,
+          name: item.subcontractors.name,
+          crewCount: 0,
+          crewNames: '',
+          workPerformed: ''
         })),
-        delays: getSectionsByType('delays').map(section => ({
-          id: section.id,
-          text: section.content
-        })),
-        tradesOnsite: getSectionsByType('trades_onsite').map(section => ({
-          id: section.id,
-          text: section.content
-        })),
-        meetings: getSectionsByType('meetings').map(section => ({
-          id: section.id,
-          text: section.content
-        })),
-        outOfScope: getSectionsByType('out_of_scope').map(section => ({
-          id: section.id,
-          text: section.content
-        })),
-        nextDayPlan: getSectionsByType('next_day_plan').map(section => ({
-          id: section.id,
-          text: section.content
-        })),
-        notes: getSectionsByType('notes').map(section => ({
-          id: section.id,
-          text: section.content
-        })),
-        // Transform crews and subcontractors
-        crews: logData.log_crews.map(item => ({
-          id: item.crews.id,
-          name: item.crews.name,
-          members: item.crews.crew_members.map(member => ({
-            id: member.id,
-            name: member.name
-          }))
-        })),
-        subcontractors: logData.log_subcontractors.map(item => ({
-          id: item.subcontractors.id,
-          name: item.subcontractors.name
-        }))
+        delays: getSectionsByType('delays').map(s => ({ id: s.id, text: s.content })),
+        tradesOnsite: getSectionsByType('trades_onsite').map(s => ({ id: s.id, text: s.content })),
+        meetings: getSectionsByType('meetings').map(s => ({ id: s.id, text: s.content })),
+        outOfScope: getSectionsByType('out_of_scope').map(s => ({ id: s.id, text: s.content })),
+        nextDayPlan: getSectionsByType('next_day_plan').map(s => ({ id: s.id, text: s.content })),
+        notes: getSectionsByType('notes').map(s => ({ id: s.id, text: s.content }))
       };
 
       const response = await fetch('/api/generate-pdf', {
@@ -236,7 +218,7 @@ export default function ViewLogPage() {
           {error || 'Log not found'}
         </div>
         <div className="mt-4">
-          <Link 
+          <Link
             href="/logs"
             className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors inline-flex"
           >
@@ -263,14 +245,14 @@ export default function ViewLogPage() {
             </div>
           </div>
           <div className="flex gap-3 print:hidden">
-            <Link 
+            <Link
               href="/logs"
               className="flex items-center gap-2 px-4 py-2 bg-gray-500 text-white rounded-md hover:bg-gray-600 transition-colors"
             >
               <ArrowLeft className="h-4 w-4" />
               Back
             </Link>
-            <Link 
+            <Link
               href={`/logs/${logId}/edit`}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors"
             >
@@ -319,108 +301,66 @@ export default function ViewLogPage() {
         </div>
       </div>
 
-      {/* People On Site */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-        {/* Subcontractors */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 print:shadow-none print:border print:border-gray-300">
-          <div className="flex items-center gap-3 mb-4">
-            <Users className="h-5 w-5 text-blue-600 print:hidden" />
-            <h3 className="text-lg font-semibold text-gray-800 print:text-base">Subcontractors</h3>
-          </div>
-          {logData.log_subcontractors.length > 0 ? (
-            <div className="space-y-2">
-              {logData.log_subcontractors.map((item, index) => (
-                <div key={index} className="p-2 bg-gray-50 rounded-md print:bg-transparent print:border print:border-gray-200">
-                  <span className="text-sm print:text-xs">{item.subcontractors.name}</span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 italic print:text-xs">No subcontractors on site</p>
-          )}
-        </div>
-
-        {/* Crews */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 print:shadow-none print:border print:border-gray-300">
-          <div className="flex items-center gap-3 mb-4">
-            <Users className="h-5 w-5 text-blue-600 print:hidden" />
-            <h3 className="text-lg font-semibold text-gray-800 print:text-base">Crews</h3>
-          </div>
-          {logData.log_crews.length > 0 ? (
-            <div className="space-y-3">
-              {logData.log_crews.map((item, index) => (
-                <div key={index} className="p-2 bg-gray-50 rounded-md print:bg-transparent print:border print:border-gray-200">
-                  <div className="font-medium text-sm print:text-xs">{item.crews.name}</div>
-                  {item.crews.crew_members.length > 0 && (
-                    <div className="mt-1 text-xs text-gray-600 print:text-xs">
-                      {item.crews.crew_members.map(member => member.name).join(', ')}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-500 italic print:text-xs">No crews on site</p>
-          )}
-        </div>
-      </div>
-
       {/* Log Sections */}
       <div className="space-y-6">
-        {/* Work Performed */}
-        <LogSection 
-          title="1. Work Performed (All Trades)" 
-          icon={Wrench} 
-          sections={getSectionsByType('work_performed')} 
+        {/* Contractors */}
+        <LogSection
+          title="1. Contractors (Crew & Work Performed)"
+          icon={Users}
+          sections={
+            contractors.length > 0
+              ? contractors.map(c => ({
+                content:
+                  `${c.name} - Crew: ${c.crewCount}` +
+                  (c.crewNames ? `\nMembers: ${c.crewNames}` : '') +
+                  (c.workPerformed ? `\nWork: ${c.workPerformed}` : '')
+              }))
+              : logData.log_subcontractors.map(sc => ({
+                content: `${sc.subcontractors.name} (no details recorded)`
+              }))
+          }
         />
 
-        {/* Delays */}
-        <LogSection 
-          title="2. Delays / Disruptions" 
-          icon={AlertTriangle} 
-          sections={getSectionsByType('delays')} 
-        />
-
-        {/* Trades Onsite */}
-        <LogSection 
-          title="3. Trades Onsite" 
-          icon={Users} 
-          sections={getSectionsByType('trades_onsite')} 
+        {/* Visitors on site */}
+        <LogSection
+          title="2. Visitors on site"
+          icon={Users}
+          sections={getSectionsByType('trades_onsite')}
         />
 
         {/* Meetings */}
-        <LogSection 
-          title="4. Meetings / Discussions" 
-          icon={MessageSquare} 
-          sections={getSectionsByType('meetings')} 
+        <LogSection
+          title="3. Meetings / Discussions"
+          icon={MessageSquare}
+          sections={getSectionsByType('meetings')}
         />
 
         {/* Out of Scope */}
-        <LogSection 
-          title="5. Out-of-Scope / Extra Work Identified" 
-          icon={FileText} 
-          sections={getSectionsByType('out_of_scope')} 
+        <LogSection
+          title="4. Out-of-Scope / Extra Work Identified"
+          icon={FileText}
+          sections={getSectionsByType('out_of_scope')}
         />
 
-        {/* Action Items */}
-        <LogSection 
-          title="6. Action Items" 
-          icon={CheckSquare} 
-          sections={getSectionsByType('action_items')} 
-        />
-
-        {/* Next Day Plan */}
-        <LogSection 
-          title="7. Plan for Next Day (All Trades)" 
-          icon={Calendar} 
-          sections={getSectionsByType('next_day_plan')} 
+        {/* Delays */}
+        <LogSection
+          title="5. Delays / Disruptions"
+          icon={AlertTriangle}
+          sections={getSectionsByType('delays')}
         />
 
         {/* Notes */}
-        <LogSection 
-          title="8. Notes / Observations" 
-          icon={Eye} 
-          sections={getSectionsByType('notes')} 
+        <LogSection
+          title="6. Notes / Observations"
+          icon={Eye}
+          sections={getSectionsByType('notes')}
+        />
+
+        {/* Plan */}
+        <LogSection
+          title="7. Plan for Next Day/Week (All Trades)"
+          icon={Calendar}
+          sections={getSectionsByType('next_day_plan')}
         />
       </div>
     </div>
@@ -428,14 +368,14 @@ export default function ViewLogPage() {
 }
 
 // Section component for consistent display
-function LogSection({ 
-  title, 
-  icon: Icon, 
-  sections 
-}: { 
-  title: string; 
-  icon: React.ElementType; 
-  sections: Array<{ content: string }>; 
+function LogSection({
+  title,
+  icon: Icon,
+  sections
+}: {
+  title: string;
+  icon: React.ElementType;
+  sections: Array<{ content: string }>;
 }) {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 print:shadow-none print:border print:border-gray-300">
