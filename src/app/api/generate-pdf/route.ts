@@ -4,7 +4,7 @@ import { jsPDF } from 'jspdf';
 export async function POST(request: NextRequest) {
   try {
     const logData = await request.json();
-    
+
     // Create new PDF document
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
         .replace(/\r/g, ' ')    // Replace Mac line breaks
         .replace(/\s+/g, ' ')   // Replace multiple spaces with single space
         .trim();
-      
+
       // Check if text fits on one line
       const textWidth = doc.getTextWidth(cleanText);
       if (textWidth <= maxWidth) {
@@ -34,11 +34,11 @@ export async function POST(request: NextRequest) {
         const words = cleanText.split(' ');
         let currentLine = '';
         let currentY_local = y;
-        
+
         for (let i = 0; i < words.length; i++) {
           const testLine = currentLine + (currentLine ? ' ' : '') + words[i];
           const testWidth = doc.getTextWidth(testLine);
-          
+
           if (testWidth <= maxWidth) {
             currentLine = testLine;
           } else {
@@ -50,13 +50,13 @@ export async function POST(request: NextRequest) {
             currentLine = words[i];
           }
         }
-        
+
         // Output remaining text
         if (currentLine) {
           doc.text(currentLine, x, currentY_local, options);
           currentY_local += lineHeight;
         }
-        
+
         return currentY_local;
       }
     };
@@ -74,10 +74,10 @@ export async function POST(request: NextRequest) {
     // Format the date nicely
     const formatDate = (dateString: string) => {
       const date = new Date(dateString);
-      return date.toLocaleDateString('en-US', { 
-        year: 'numeric', 
-        month: 'long', 
-        day: 'numeric' 
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
       });
     };
 
@@ -91,61 +91,61 @@ export async function POST(request: NextRequest) {
     doc.setFontSize(12);
     doc.setFont('helvetica', 'normal');
     currentY += 5;
-    
+
     // Three columns for project info
     const colWidth = (pageWidth - 2 * margin) / 3;
-    
+
     doc.text('Date:', margin + 5, currentY);
     doc.setFont('helvetica', 'normal');
     doc.text(formatDate(logData.date), margin + 5, currentY + 6);
-    
+
     doc.setFont('helvetica', 'normal');
     doc.text('Superintendent:', margin + colWidth + 5, currentY);
     doc.setFont('helvetica', 'normal');
     doc.text(logData.superintendentName || 'Not specified', margin + colWidth + 5, currentY + 6);
-    
+
     doc.setFont('helvetica', 'normal');
     doc.text('Project:', margin + 2 * colWidth + 5, currentY);
     doc.setFont('helvetica', 'normal');
     doc.text(logData.projectName || 'Not specified', margin + 2 * colWidth + 5, currentY + 6);
-    
+
     currentY += 25;
 
     // Helper function to add a section
     const addSection = (title: string, items: any[], isList: boolean = true) => {
       checkPageBreak(20);
-      
+
       // Section title
       doc.setFontSize(14);
       doc.setFont('helvetica', 'normal');
       currentY = addText(title, margin, currentY, pageWidth - 2 * margin);
-      
+
       currentY += 5;
-      
+
       doc.setFontSize(11);
       doc.setFont('helvetica', 'normal');
-      
+
       if (items && items.length > 0) {
         // Filter out empty items
         const filteredItems = items.filter((item: any) => item.text?.trim());
-        
+
         if (filteredItems.length > 0) {
           // Process each item as a separate bullet point
           filteredItems.forEach((item: any, index: number) => {
             checkPageBreak(15);
-            
+
             // Add bullet point
             doc.text('•', margin + 5, currentY);
-            
+
             // Clean the text but keep each item separate
             const cleanedText = (item.text || '')
               .replace(/\s+/g, ' ')  // Replace multiple spaces with single space
               .trim();
-            
+
             // Add the text next to the bullet point
             const textStartY = currentY;
             currentY = addText(cleanedText, margin + 15, textStartY, pageWidth - 2 * margin - 15);
-            
+
             // Add spacing between bullet points
             currentY += 4;
           });
@@ -159,73 +159,88 @@ export async function POST(request: NextRequest) {
         currentY = addText('No items recorded', margin + 5, currentY, pageWidth - 2 * margin - 5);
         doc.setFont('helvetica', 'normal');
       }
-      
+
       currentY += 6;
     };
 
-    // Add all sections (all should use bullet points for separate items)
-    addSection('1. Work Performed (All Trades)', logData.workItems);
-    addSection('2. Delays / Disruptions', logData.delays);
-    addSection('3. Trades Onsite', logData.tradesOnsite);
-    addSection('4. Meetings / Discussions', logData.meetings);
-    addSection('5. Out-of-Scope / Extra Work Identified', logData.outOfScope);
-    addSection('6. Plan for Next Day (All Trades)', logData.nextDayPlan);
-    addSection('7. Notes / Observations', logData.notes);
+    // Determine contractors (new) vs legacy
+    const contractors: any[] = Array.isArray(logData.contractors)
+      ? logData.contractors
+      : [];
 
-    // Personnel section if there are crews or subcontractors
-    if ((logData.crews && logData.crews.length > 0) || (logData.subcontractors && logData.subcontractors.length > 0)) {
-      checkPageBreak(50);
-      
+    // REPLACE previous addContractorsSection implementation with stacked layout
+    const addContractorsSection = () => {
+      if (contractors.length === 0) {
+        // Legacy fallback
+        if (Array.isArray(logData.workItems)) {
+          addSection('1. Work Performed (All Trades)', logData.workItems);
+          return;
+        }
+        addSection('1. Contractors (Crew & Work Performed)', []); // empty
+        return;
+      }
+
+      // Section title (manual, not via addSection, to allow custom multi-line rendering)
+      checkPageBreak(20);
       doc.setFontSize(14);
       doc.setFont('helvetica', 'normal');
-      currentY = addText('Personnel & Subcontractors', margin, currentY, pageWidth - 2 * margin);
-      
-      currentY += 10;
-      
-      // Crews
-      if (logData.crews && logData.crews.length > 0) {
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'normal');
-        currentY = addText('Crews:', margin, currentY, pageWidth - 2 * margin);
-        currentY += 3;
-        
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        
-        logData.crews.forEach((crew: any) => {
-          checkPageBreak(20);
-          
-          doc.setFont('helvetica', 'normal');
-          currentY = addText(`• ${crew.name}`, margin + 5, currentY, pageWidth - 2 * margin - 5);
-          doc.setFont('helvetica', 'normal');
-          
-          if (crew.members && crew.members.length > 0) {
-            crew.members.forEach((member: any) => {
-              checkPageBreak(10);
-              currentY = addText(`  - ${member.name}`, margin + 15, currentY, pageWidth - 2 * margin - 15);
-            });
-          }
-          currentY += 3;
-        });
-        currentY += 5;
-      }
-      
-      // Subcontractors
-      if (logData.subcontractors && logData.subcontractors.length > 0) {
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'normal');
-        currentY = addText('Subcontractors:', margin, currentY, pageWidth - 2 * margin);
-        currentY += 3;
-        
-        doc.setFontSize(11);
-        doc.setFont('helvetica', 'normal');
-        
-        logData.subcontractors.forEach((sub: any) => {
-          checkPageBreak(10);
-          currentY = addText(`• ${sub.name}`, margin + 5, currentY, pageWidth - 2 * margin - 5);
-          currentY += 2;
-        });
-      }
+      currentY = addText('1. Contractors (Crew & Work Performed)', margin, currentY, pageWidth - 2 * margin);
+      currentY += 5;
+      doc.setFontSize(11);
+
+      contractors.forEach(c => {
+        // Estimate required space (3 lines + spacing)
+        checkPageBreak(25);
+
+        // Bullet + first line (Name, Crew)
+        const headerParts: string[] = [];
+        headerParts.push(c.name || 'Contractor');
+        if (c.crewCount !== undefined && c.crewCount !== null) headerParts.push(`Crew: ${c.crewCount}`);
+        const headerLine = headerParts.join(', ');
+
+        doc.text('•', margin + 2, currentY);
+        currentY = addText(headerLine, margin + 10, currentY, pageWidth - margin - (margin + 10));
+
+        // Members line
+        if (c.crewNames) {
+          currentY = addText(`Members: ${c.crewNames}`, margin + 10, currentY, pageWidth - 2 * margin);
+        }
+
+        // Work line
+        if (c.workPerformed) {
+          currentY = addText(`Work: ${c.workPerformed}`, margin + 10, currentY, pageWidth - 2 * margin);
+        }
+
+        currentY += 6; // spacing after each contractor block
+      });
+
+      currentY += 4; // extra spacing before next numbered section
+    };
+
+    // Insert before other addSection calls:
+    // REMOVE previous addSection('1. Work Performed...') line and replace with:
+    addContractorsSection();
+    // NEW ORDER & TITLES:
+    addSection('2. Visitors on site', logData.tradesOnsite);
+    addSection('3. Meetings / Discussions', logData.meetings);
+    addSection('4. Out-of-Scope / Extra Work Identified', logData.outOfScope);
+    addSection('5. Delays / Disruptions', logData.delays);
+    addSection('6. Notes / Observations', logData.notes);
+    addSection('7. Plan for Next Day/Week (All Trades)', logData.nextDayPlan);
+
+    // Remove subcontractors standalone section (now included per contractor) OR keep if no contractors
+    if (contractors.length === 0 && logData.subcontractors?.length > 0) {
+      checkPageBreak(30);
+      doc.setFontSize(14);
+      currentY = addText('Subcontractors', margin, currentY, pageWidth - 2 * margin);
+      currentY += 8;
+      doc.setFontSize(11);
+      logData.subcontractors.forEach((sub: any) => {
+        checkPageBreak(10);
+        currentY = addText(`• ${sub.name}`, margin + 5, currentY, pageWidth - 2 * margin - 5);
+        currentY += 2;
+      });
+      currentY += 5;
     }
 
     // Generate PDF buffer
