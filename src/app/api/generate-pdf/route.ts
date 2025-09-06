@@ -115,11 +115,10 @@ export async function POST(request: NextRequest) {
     const addSection = (title: string, items: any[], isList: boolean = true) => {
       checkPageBreak(20);
 
-      // Section title
+      // Section title now bold
       doc.setFontSize(14);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont('helvetica', 'bold');
       currentY = addText(title, margin, currentY, pageWidth - 2 * margin);
-
       currentY += 5;
 
       doc.setFontSize(11);
@@ -180,41 +179,64 @@ export async function POST(request: NextRequest) {
         return;
       }
 
-      // Section title (manual, not via addSection, to allow custom multi-line rendering)
       checkPageBreak(20);
       doc.setFontSize(14);
-      doc.setFont('helvetica', 'normal');
+      doc.setFont('helvetica', 'bold'); // title bold
       currentY = addText('1. Contractors (Crew & Work Performed)', margin, currentY, pageWidth - 2 * margin);
       currentY += 5;
       doc.setFontSize(11);
+      doc.setFont('helvetica', 'normal');
+
+      const addLabeledLine = (label: string, value: string) => {
+        if (!value) return;
+        // bold label, normal wrapped value
+        doc.setFont('helvetica', 'bold');
+        doc.text(label, margin + 10, currentY);
+        const labelWidth = doc.getTextWidth(label + ' ');
+        doc.setFont('helvetica', 'normal');
+        currentY = addText(value, margin + 10 + labelWidth, currentY, pageWidth - 2 * margin - labelWidth);
+      };
 
       contractors.forEach(c => {
-        // Estimate required space (3 lines + spacing)
         checkPageBreak(25);
 
-        // Bullet + first line (Name, Crew)
-        const headerParts: string[] = [];
-        headerParts.push(c.name || 'Contractor');
-        if (c.crewCount !== undefined && c.crewCount !== null) headerParts.push(`Crew: ${c.crewCount}`);
-        const headerLine = headerParts.join(', ');
-
+        // Bullet
         doc.text('•', margin + 2, currentY);
-        currentY = addText(headerLine, margin + 10, currentY, pageWidth - margin - (margin + 10));
 
-        // Members line
+        // Bold contractor name
+        const name = c.name || 'Contractor';
+        doc.setFont('helvetica', 'bold');
+        doc.text(name, margin + 10, currentY);
+
+        // Normal crew info after name (same line)
+        let xAfterName = margin + 10 + doc.getTextWidth(name) + 4;
+        doc.setFont('helvetica', 'normal');
+        if (c.crewCount !== undefined && c.crewCount !== null) {
+          const crewText = `Crew: ${c.crewCount}`;
+          // If exceeds width, move to next line
+            if (xAfterName + doc.getTextWidth(crewText) > pageWidth - margin) {
+              currentY += lineHeight;
+              doc.text(crewText, margin + 10, currentY);
+            } else {
+              doc.text(crewText, xAfterName, currentY);
+            }
+        }
+        currentY += lineHeight;
+
+        // Members line (bold label)
         if (c.crewNames) {
-          currentY = addText(`Members: ${c.crewNames}`, margin + 10, currentY, pageWidth - 2 * margin);
+          addLabeledLine('Members:', c.crewNames);
         }
 
-        // Work line
+        // Work line (bold label)
         if (c.workPerformed) {
-          currentY = addText(`Work: ${c.workPerformed}`, margin + 10, currentY, pageWidth - 2 * margin);
+          addLabeledLine('Work:', c.workPerformed);
         }
 
-        currentY += 6; // spacing after each contractor block
+        currentY += 6;
       });
 
-      currentY += 4; // extra spacing before next numbered section
+      currentY += 4;
     };
 
     // Insert before other addSection calls:
