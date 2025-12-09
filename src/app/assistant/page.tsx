@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles, Loader2, MessageSquare, Plus, ChevronDown, Clock, Mic, Volume2, VolumeX } from 'lucide-react';
+import { Send, Sparkles, Loader2, MessageSquare, Plus, ChevronDown, Clock, Mic, Volume2, VolumeX, Calendar, X, Search } from 'lucide-react';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -33,6 +33,10 @@ export default function AssistantPage() {
   const [voiceTranscript, setVoiceTranscript] = useState('');
   const [selectedVoice, setSelectedVoice] = useState<string>('alloy');
   const [isVoiceResponseEnabled, setIsVoiceResponseEnabled] = useState(false);
+  const [showWeeklyRecapModal, setShowWeeklyRecapModal] = useState(false);
+  const [recapStartDate, setRecapStartDate] = useState('');
+  const [recapEndDate, setRecapEndDate] = useState('');
+  const [conversationSearch, setConversationSearch] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
@@ -1111,66 +1115,61 @@ export default function AssistantPage() {
             )}
           </div>
         )}
-        
-        <div className="text-xs text-gray-500 mt-3 text-center">
-          💡 <strong>Tip:</strong> Ask specific questions about safety, productivity, weather impacts, or schedule analysis for better insights.
-          <br />
-          🎙️ <strong>Voice:</strong> Hold the "Hold to Speak" button below to record your voice message, then release to send.
-        </div>
 
-        {/* Quick Action Buttons */}
-        <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
-          <div className="text-sm font-medium text-gray-700 mb-3 flex items-center gap-2">
-            ⚡ Quick Actions
-            <span className="text-xs text-gray-500">(Click to insert command)</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-sm">
+        {/* Quick Action Buttons - Compact */}
+        <div className="mt-3 p-3 bg-gray-50 rounded-lg border border-gray-200">
+          <div className="grid grid-cols-3 gap-2 text-xs">
             <button
-              onClick={() => setQuery("Show me all overdue action items")}
-              className="p-2 bg-red-50 text-red-700 rounded border border-red-200 hover:bg-red-100 transition-colors text-left"
+              onClick={() => {
+                const today = new Date();
+                const dayOfWeek = today.getDay();
+                const monday = new Date(today);
+                monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+                const friday = new Date(monday);
+                friday.setDate(monday.getDate() + 4);
+                setRecapStartDate(monday.toISOString().split('T')[0]);
+                setRecapEndDate(friday.toISOString().split('T')[0]);
+                setShowWeeklyRecapModal(true);
+              }}
+              className="p-2 bg-indigo-50 text-indigo-700 rounded border border-indigo-200 hover:bg-indigo-100 transition-colors text-left flex items-center gap-1"
             >
-              
+              <Calendar className="h-3 w-3" />
+              Weekly Recap
             </button>
             <button
               onClick={() => setQuery("What action items need attention today?")}
               className="p-2 bg-yellow-50 text-yellow-700 rounded border border-yellow-200 hover:bg-yellow-100 transition-colors text-left"
             >
-              ⚠️ Today's Priorities
+              ⚠️ Priorities
             </button>
             <button
               onClick={() => setQuery("Show me recent daily log activity")}
               className="p-2 bg-blue-50 text-blue-700 rounded border border-blue-200 hover:bg-blue-100 transition-colors text-left"
             >
-              📊 Recent Activity
+              📊 Activity
             </button>
             <button
               onClick={() => setQuery("What are the latest updates on action items?")}
               className="p-2 bg-green-50 text-green-700 rounded border border-green-200 hover:bg-green-100 transition-colors text-left"
             >
-              📝 Latest Notes & Updates
+              📝 Updates
             </button>
             <button
-              onClick={() => setQuery("What approvals and decisions were made recently?")}
-              className="p-2 bg-purple-50 text-purple-700 rounded border border-purple-200 hover:bg-purple-100 transition-colors text-left"
+              onClick={() => setQuery("Show me all overdue action items")}
+              className="p-2 bg-red-50 text-red-700 rounded border border-red-200 hover:bg-red-100 transition-colors text-left"
             >
-              ✅ Recent Approvals
+              🚨 Overdue
             </button>
             <button
               onClick={() => setQuery("Show me action items with pricing discussions")}
               className="p-2 bg-orange-50 text-orange-700 rounded border border-orange-200 hover:bg-orange-100 transition-colors text-left"
             >
-              💰 Pricing Updates
+              💰 Pricing
             </button>
-          </div>
-          
-          <div className="mt-3 text-xs text-gray-600">
-            <strong>Database Actions:</strong> Try commands like "Mark action item #123 as completed" or "Change priority of item #456 to urgent"
-            <br />
-            <strong>Note Analysis:</strong> Ask about "recent notes", "latest updates", or "what's the current status of [project/item]"
           </div>
         </div>
 
-        <div className="flex items-center justify-center gap-4 mt-4 pt-4 border-t border-gray-200">
+        <div className="flex items-center justify-center mt-3">
           <button
             onClick={createNewChat}
             disabled={isCreatingChat}
@@ -1183,8 +1182,8 @@ export default function AssistantPage() {
       </div>
 
       {/* Conversations Sidebar */}
-      <div className="w-80 bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-        <div className="flex items-center gap-2 mb-4">
+      <div className="w-80 bg-white rounded-lg shadow-sm border border-gray-200 p-4 flex flex-col sticky top-4 h-fit max-h-[calc(100vh-100px)] self-start">
+        <div className="flex items-center gap-2 mb-3">
           <MessageSquare className="h-5 w-5 text-gray-600" />
           <h2 className="font-semibold text-gray-800">Conversations</h2>
           <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-full">
@@ -1192,8 +1191,34 @@ export default function AssistantPage() {
           </span>
         </div>
         
-        <div className="space-y-2 max-h-[600px] overflow-y-auto">
-          {chats.map((chat) => (
+        {/* Search Bar */}
+        <div className="relative mb-3">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Search conversations..."
+            value={conversationSearch}
+            onChange={(e) => setConversationSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+          />
+          {conversationSearch && (
+            <button
+              onClick={() => setConversationSearch('')}
+              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+        
+        <div className="space-y-2 overflow-y-auto flex-1">
+          {chats
+            .filter(chat => 
+              conversationSearch === '' || 
+              chat.title.toLowerCase().includes(conversationSearch.toLowerCase()) ||
+              chat.messages.some(msg => msg.content.toLowerCase().includes(conversationSearch.toLowerCase()))
+            )
+            .map((chat) => (
             <div
               key={chat.id}
               className={`relative group rounded-lg border transition-colors ${
@@ -1238,8 +1263,101 @@ export default function AssistantPage() {
               Start by asking a question!
             </div>
           )}
+          
+          {chats.length > 0 && conversationSearch && chats.filter(chat => 
+            chat.title.toLowerCase().includes(conversationSearch.toLowerCase()) ||
+            chat.messages.some(msg => msg.content.toLowerCase().includes(conversationSearch.toLowerCase()))
+          ).length === 0 && (
+            <div className="text-center text-gray-500 text-sm py-8">
+              No conversations match "{conversationSearch}"
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Weekly Recap Date Picker Modal */}
+      {showWeeklyRecapModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl p-6 w-96 max-w-[90vw]">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-indigo-600" />
+                Weekly Recap Date Range
+              </h3>
+              <button
+                onClick={() => setShowWeeklyRecapModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={recapStartDate}
+                  onChange={(e) => setRecapStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={recapEndDate}
+                  onChange={(e) => setRecapEndDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                />
+              </div>
+              
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => setShowWeeklyRecapModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    const startFormatted = new Date(recapStartDate).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+                    const endFormatted = new Date(recapEndDate).toLocaleDateString('en-US', { month: 'numeric', day: 'numeric' });
+                    
+                    setQuery(`Give me a WEEKLY RECAP for Woodland Hills Apartments for the period ${recapStartDate} to ${recapEndDate}. ONLY include daily logs and work performed between these exact dates. Format it exactly like this:
+
+WEEKLY RECAP (${startFormatted}–${endFormatted})
+
+• [Contractor Name]: Brief 1-2 sentence summary of key work completed during this date range. Include unit numbers if applicable.
+
+• [Next Contractor]: Brief 1-2 sentence summary of their work.
+
+• Fire & Utilities Coordination:
+  • [Item 1]
+  • [Item 2]
+
+• General Notes:
+  • [Note 1 - site visits, discoveries, etc.]
+  • [Note 2 - upcoming work, pricing, etc.]
+  • [Note 3 - any other items]
+
+IMPORTANT: Only include work from daily logs dated between ${recapStartDate} and ${recapEndDate}. Do not include any work from outside this date range. Keep each trade recap brief (1-2 sentences max). Use bullet points for General Notes and Fire & Utilities sections.`);
+                    setShowWeeklyRecapModal(false);
+                  }}
+                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  Generate Recap
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { executeAIAction } from '@/app/api/ai-actions/route';
 // Data fetching functions
 async function fetchConstructionData() {
   try {
-    // Fetch recent daily logs with comprehensive data
+    // Fetch recent daily logs with project info
     const { data: dailyLogs, error: logsError } = await supabase
       .from('daily_logs')
       .select(`
@@ -14,11 +14,9 @@ async function fetchConstructionData() {
         date,
         project_id,
         superintendent_name,
-        weather,
-        temperature,
         created_at,
         updated_at,
-        projects(name, description, status)
+        projects(name, description, status, location, client)
       `)
       .order('date', { ascending: false })
       .limit(20);
@@ -54,7 +52,7 @@ async function fetchConstructionData() {
         log_id,
         crew_id,
         created_at,
-        crew_members(name, role, email, phone)
+        crews(name)
       `)
       .order('created_at', { ascending: false })
       .limit(100);
@@ -63,24 +61,9 @@ async function fetchConstructionData() {
       console.error('Error fetching log crews:', logCrewsError);
     }
 
-    // Fetch log equipment usage
-    const { data: logEquipment, error: logEquipmentError } = await supabase
-      .from('log_equipment')
-      .select(`
-        id,
-        log_id,
-        equipment_id,
-        hours_used,
-        notes,
-        created_at,
-        equipment(name, type, model, status)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(100);
-
-    if (logEquipmentError) {
-      console.error('Error fetching log equipment:', logEquipmentError);
-    }
+    // Note: log_equipment table doesn't exist in this schema
+    const logEquipment: any[] = [];
+    const equipment: any[] = [];
 
     // Fetch log photos
     const { data: logPhotos, error: logPhotosError } = await supabase
@@ -114,24 +97,6 @@ async function fetchConstructionData() {
 
     if (logSubcontractorsError) {
       console.error('Error fetching log subcontractors:', logSubcontractorsError);
-    }
-
-    // Fetch equipment master list for reference
-    const { data: equipment, error: equipmentError } = await supabase
-      .from('equipment')
-      .select(`
-        id,
-        name,
-        type,
-        model,
-        status,
-        created_at,
-        updated_at
-      `)
-      .order('name');
-
-    if (equipmentError) {
-      console.error('Error fetching equipment:', equipmentError);
     }
 
     // Fetch recent action items for context
@@ -187,21 +152,21 @@ async function fetchConstructionData() {
     // Fetch projects for context
     const { data: projects, error: projectsError } = await supabase
       .from('projects')
-      .select('id, name, description, status, start_date, target_completion')
+      .select('id, name, description, status, start_date, end_date, location, client')
       .order('created_at', { ascending: false });
 
     if (projectsError) {
       console.error('Error fetching projects:', projectsError);
     }
 
-    // Fetch crew members for context
-    const { data: crewMembers, error: crewError } = await supabase
-      .from('crew_members')
-      .select('id, name, role, email, phone, hourly_rate, notes')
+    // Fetch crews for context
+    const { data: crews, error: crewError } = await supabase
+      .from('crews')
+      .select('id, name, created_at, updated_at')
       .order('name');
 
     if (crewError) {
-      console.error('Error fetching crew members:', crewError);
+      console.error('Error fetching crews:', crewError);
     }
 
     // Fetch subcontractors for context
@@ -243,14 +208,14 @@ async function fetchConstructionData() {
       dailyLogs: dailyLogs || [],
       logSections: logSections || [],
       logCrews: logCrews || [],
-      logEquipment: logEquipment || [],
+      logEquipment: logEquipment,
       logPhotos: logPhotos || [],
       logSubcontractors: logSubcontractors || [],
-      equipment: equipment || [],
+      equipment: equipment,
       actionItems: actionItems || [],
       actionItemNotes: actionItemNotes || [],
       projects: projects || [],
-      crewMembers: crewMembers || [],
+      crews: crews || [],
       subcontractors: subcontractors || [],
       projectSubcontractors: projectSubcontractors || [],
       error: null
@@ -268,7 +233,7 @@ async function fetchConstructionData() {
       actionItems: [],
       actionItemNotes: [],
       projects: [],
-      crewMembers: [],
+      crews: [],
       subcontractors: [],
       projectSubcontractors: [],
       error: 'Failed to fetch some data'
@@ -1337,10 +1302,9 @@ Be conversational, practical, and focus on actionable insights for construction 
     });
 
     const completion = await openaiClient.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-5-mini",
       messages,
-      max_tokens: 4000,
-      temperature: 0.4,
+      max_completion_tokens: 4000,
     });
 
     const response = completion.choices[0]?.message?.content;
@@ -1514,7 +1478,7 @@ Be conversational, practical, and focus on actionable insights for construction 
 
     // Log AI response
     await logMessage(conversationId, 'assistant', finalResponse, {
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-mini',
       responseTime,
       tokenCount: completion.usage?.total_tokens,
       promptTokens: completion.usage?.prompt_tokens,
