@@ -1,7 +1,8 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Sparkles, Loader2, MessageSquare, Plus, ChevronDown, Clock, Mic, Volume2, VolumeX, Calendar, X, Search } from 'lucide-react';
+import { Send, Sparkles, Loader2, MessageSquare, Plus, ChevronDown, Clock, Mic, Volume2, VolumeX, Calendar, X, Search, Building2 } from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -18,6 +19,11 @@ interface Chat {
   messages: Message[];
   createdAt: string;
   updatedAt: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
 }
 
 export default function AssistantPage() {
@@ -37,9 +43,25 @@ export default function AssistantPage() {
   const [recapStartDate, setRecapStartDate] = useState('');
   const [recapEndDate, setRecapEndDate] = useState('');
   const [conversationSearch, setConversationSearch] = useState('');
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const recognitionRef = useRef<any>(null);
+
+  // Fetch projects on mount
+  useEffect(() => {
+    async function fetchProjects() {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('id, name')
+        .order('name');
+      if (!error && data) {
+        setProjects(data);
+      }
+    }
+    fetchProjects();
+  }, []);
 
   // 🎙️  ────────────────────────────────────────────────────────────
   // Client‑side Speech helpers with OpenAI TTS
@@ -852,7 +874,8 @@ export default function AssistantPage() {
           sessionId: currentChatId,
           userId: 'current_user',
           conversationHistory: conversationHistory.slice(-10),
-          apiKey: apiKey
+          apiKey: apiKey,
+          projectId: selectedProjectId !== 'all' ? selectedProjectId : null
         }),
       });
       
@@ -996,6 +1019,28 @@ export default function AssistantPage() {
             )}
           </div>
           <div ref={messagesEndRef} />
+        </div>
+
+        {/* Project Selector */}
+        <div className="flex items-center gap-2 mb-2">
+          <Building2 className="h-4 w-4 text-gray-500" />
+          <select
+            value={selectedProjectId}
+            onChange={(e) => setSelectedProjectId(e.target.value)}
+            className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white"
+          >
+            <option value="all">All Projects</option>
+            {projects.map((project) => (
+              <option key={project.id} value={project.id}>
+                {project.name}
+              </option>
+            ))}
+          </select>
+          {selectedProjectId !== 'all' && (
+            <span className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded">
+              Filtered
+            </span>
+          )}
         </div>
         
         <form onSubmit={handleSubmit} className="flex gap-2">

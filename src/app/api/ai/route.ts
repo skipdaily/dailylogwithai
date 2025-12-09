@@ -4,10 +4,10 @@ import OpenAI from 'openai';
 import { executeAIAction } from '@/app/api/ai-actions/route';
 
 // Data fetching functions
-async function fetchConstructionData() {
+async function fetchConstructionData(projectId?: string) {
   try {
-    // Fetch recent daily logs with project info
-    const { data: dailyLogs, error: logsError } = await supabase
+    // Build daily logs query - filter by project if provided
+    let dailyLogsQuery = supabase
       .from('daily_logs')
       .select(`
         id,
@@ -20,13 +20,23 @@ async function fetchConstructionData() {
       `)
       .order('date', { ascending: false })
       .limit(20);
+    
+    // Apply project filter if projectId is provided
+    if (projectId) {
+      dailyLogsQuery = dailyLogsQuery.eq('project_id', projectId);
+    }
+    
+    const { data: dailyLogs, error: logsError } = await dailyLogsQuery;
 
     if (logsError) {
       console.error('Error fetching daily logs:', logsError);
     }
 
+    // Get log IDs for filtering related data when a project is selected
+    const logIds = dailyLogs?.map(log => log.id) || [];
+
     // Fetch log sections (work performed, delays, trades, meetings, etc.)
-    const { data: logSections, error: sectionsError } = await supabase
+    let logSectionsQuery = supabase
       .from('log_sections')
       .select(`
         id,
@@ -39,13 +49,20 @@ async function fetchConstructionData() {
       `)
       .order('created_at', { ascending: false })
       .limit(200);
+    
+    // Filter by project's log IDs if projectId is provided
+    if (projectId && logIds.length > 0) {
+      logSectionsQuery = logSectionsQuery.in('log_id', logIds);
+    }
+    
+    const { data: logSections, error: sectionsError } = await logSectionsQuery;
 
     if (sectionsError) {
       console.error('Error fetching log sections:', sectionsError);
     }
 
     // Fetch log crew assignments
-    const { data: logCrews, error: logCrewsError } = await supabase
+    let logCrewsQuery = supabase
       .from('log_crews')
       .select(`
         id,
@@ -56,6 +73,13 @@ async function fetchConstructionData() {
       `)
       .order('created_at', { ascending: false })
       .limit(100);
+    
+    // Filter by project's log IDs if projectId is provided
+    if (projectId && logIds.length > 0) {
+      logCrewsQuery = logCrewsQuery.in('log_id', logIds);
+    }
+    
+    const { data: logCrews, error: logCrewsError } = await logCrewsQuery;
 
     if (logCrewsError) {
       console.error('Error fetching log crews:', logCrewsError);
@@ -66,7 +90,7 @@ async function fetchConstructionData() {
     const equipment: any[] = [];
 
     // Fetch log photos
-    const { data: logPhotos, error: logPhotosError } = await supabase
+    let logPhotosQuery = supabase
       .from('log_photos')
       .select(`
         id,
@@ -77,13 +101,20 @@ async function fetchConstructionData() {
       `)
       .order('created_at', { ascending: false })
       .limit(50);
+    
+    // Filter by project's log IDs if projectId is provided
+    if (projectId && logIds.length > 0) {
+      logPhotosQuery = logPhotosQuery.in('log_id', logIds);
+    }
+    
+    const { data: logPhotos, error: logPhotosError } = await logPhotosQuery;
 
     if (logPhotosError) {
       console.error('Error fetching log photos:', logPhotosError);
     }
 
     // Fetch log subcontractor participation
-    const { data: logSubcontractors, error: logSubcontractorsError } = await supabase
+    let logSubcontractorsQuery = supabase
       .from('log_subcontractors')
       .select(`
         id,
@@ -94,13 +125,20 @@ async function fetchConstructionData() {
       `)
       .order('created_at', { ascending: false })
       .limit(100);
+    
+    // Filter by project's log IDs if projectId is provided
+    if (projectId && logIds.length > 0) {
+      logSubcontractorsQuery = logSubcontractorsQuery.in('log_id', logIds);
+    }
+    
+    const { data: logSubcontractors, error: logSubcontractorsError } = await logSubcontractorsQuery;
 
     if (logSubcontractorsError) {
       console.error('Error fetching log subcontractors:', logSubcontractorsError);
     }
 
     // Fetch recent action items for context
-    const { data: actionItems, error: actionError } = await supabase
+    let actionItemsQuery = supabase
       .from('action_items')
       .select(`
         id,
@@ -120,6 +158,13 @@ async function fetchConstructionData() {
       `)
       .order('created_at', { ascending: false })
       .limit(50);
+    
+    // Filter by project if projectId is provided
+    if (projectId) {
+      actionItemsQuery = actionItemsQuery.eq('project_id', projectId);
+    }
+    
+    const { data: actionItems, error: actionError } = await actionItemsQuery;
 
     if (actionError) {
       console.error('Error fetching action items:', actionError);
@@ -184,7 +229,7 @@ async function fetchConstructionData() {
     }
 
     // Fetch project_subcontractors to identify officially awarded contractors
-    const { data: projectSubcontractors, error: projectSubcontractorsError } = await supabase
+    let projectSubcontractorsQuery = supabase
       .from('project_subcontractors')
       .select(`
         id,
@@ -199,6 +244,13 @@ async function fetchConstructionData() {
         subcontractors(name, specialty, contact_person, contact_email, contact_phone)
       `)
       .order('assigned_date', { ascending: false });
+    
+    // Filter by project if projectId is provided
+    if (projectId) {
+      projectSubcontractorsQuery = projectSubcontractorsQuery.eq('project_id', projectId);
+    }
+    
+    const { data: projectSubcontractors, error: projectSubcontractorsError } = await projectSubcontractorsQuery;
 
     if (projectSubcontractorsError) {
       console.error('Error fetching project subcontractors:', projectSubcontractorsError);
@@ -920,7 +972,7 @@ export async function POST(request: NextRequest) {
   const startTime = Date.now();
 
   try {
-    const { message, sessionId, userId, conversationHistory, action, apiKey } = await request.json();
+    const { message, sessionId, userId, conversationHistory, action, apiKey, projectId } = await request.json();
 
     // Check for API key - either from request or environment
     const openaiApiKey = apiKey || process.env.OPENAI_API_KEY;
@@ -951,8 +1003,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(result);
     }
 
-    // Fetch current construction data
-    const constructionData = await fetchConstructionData();
+    // Fetch current construction data (filtered by project if projectId provided)
+    const constructionData = await fetchConstructionData(projectId);
     const dataContext = createDataContext(constructionData);
 
     // Find or create conversation
@@ -1302,7 +1354,7 @@ Be conversational, practical, and focus on actionable insights for construction 
     });
 
     const completion = await openaiClient.chat.completions.create({
-      model: "gpt-5-mini",
+      model: "gpt-5",
       messages,
       max_completion_tokens: 4000,
     });
@@ -1478,7 +1530,7 @@ Be conversational, practical, and focus on actionable insights for construction 
 
     // Log AI response
     await logMessage(conversationId, 'assistant', finalResponse, {
-      model: 'gpt-5-mini',
+      model: 'gpt-5',
       responseTime,
       tokenCount: completion.usage?.total_tokens,
       promptTokens: completion.usage?.prompt_tokens,
