@@ -317,8 +317,8 @@ const ContractorsManager = ({
     const sub = availableSubcontractors.find(s => s.id === selected);
     if (!sub) return;
     if (contractors.find(c => c.subcontractorId === sub.id)) return;
+    // Add new contractor to the top of the list
     setContractors([
-      ...contractors,
       {
         id: generateId(),
         subcontractorId: sub.id,
@@ -326,7 +326,8 @@ const ContractorsManager = ({
         crewCount: 0,
         crewNames: '',
         workPerformed: ''
-      }
+      },
+      ...contractors
     ]);
     setSelected('');
   };
