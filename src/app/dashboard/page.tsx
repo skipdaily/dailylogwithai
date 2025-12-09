@@ -159,7 +159,7 @@ export default function Dashboard() {
                 {recentLogs.map((log: any) => (
                   <tr key={log.id}>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {new Date(log.date).toLocaleDateString()}
+                      {new Date(`${log.date}T00:00:00`).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {log.projects?.name || 'No Project'}

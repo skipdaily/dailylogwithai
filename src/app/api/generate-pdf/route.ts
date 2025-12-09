@@ -73,7 +73,9 @@ export async function POST(request: NextRequest) {
 
     // Format the date nicely
     const formatDate = (dateString: string) => {
-      const date = new Date(dateString);
+      // Add T00:00:00 to date-only strings to prevent UTC interpretation
+      const normalizedDate = dateString.includes('T') ? dateString : `${dateString}T00:00:00`;
+      const date = new Date(normalizedDate);
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',

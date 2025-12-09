@@ -1164,7 +1164,9 @@ const TradesList = ({
 const PrintView = React.forwardRef<HTMLDivElement, { logData: DailyLogData }>(
   ({ logData }, ref) => {
     const formatDate = (dateString: string) => {
-      const date = new Date(dateString);
+      // Add T00:00:00 to date-only strings to prevent UTC interpretation
+      const normalizedDate = dateString.includes('T') ? dateString : `${dateString}T00:00:00`;
+      const date = new Date(normalizedDate);
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'long',
@@ -1666,10 +1668,19 @@ const ConstructionDailyLog = () => {
     members: members.map(name => createDefaultCrewMember(name))
   });
 
+  // Helper to get local date in YYYY-MM-DD format (avoids UTC timezone issues)
+  const getLocalDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Initialize state with unique IDs for all items
   const [logData, setLogData] = useState<DailyLogData>({
     id: generateId(),
-    date: new Date().toISOString().split('T')[0],
+    date: getLocalDateString(),
     superintendentName: '',
     projectId: null,
     projectName: '',

@@ -138,6 +138,19 @@ export default function ViewLogPage() {
     try {
       setIsGeneratingPdf(true);
 
+      // Helper to expand sections - each row may contain multiple newline-separated items
+      const expandSections = (sections: any[]) => {
+        const items: { id: string; text: string }[] = [];
+        sections.forEach(s => {
+          // Split content by newlines and create separate items
+          const lines = s.content.split('\n').filter((line: string) => line.trim());
+          lines.forEach((line: string, index: number) => {
+            items.push({ id: `${s.id}-${index}`, text: line.trim() });
+          });
+        });
+        return items;
+      };
+
       // Transform the database data structure to match what the PDF API expects
       const transformedData = {
         id: logData.id,
@@ -152,12 +165,12 @@ export default function ViewLogPage() {
           crewNames: '',
           workPerformed: ''
         })),
-        delays: getSectionsByType('delays').map(s => ({ id: s.id, text: s.content })),
-        tradesOnsite: getSectionsByType('trades_onsite').map(s => ({ id: s.id, text: s.content })),
-        meetings: getSectionsByType('meetings').map(s => ({ id: s.id, text: s.content })),
-        outOfScope: getSectionsByType('out_of_scope').map(s => ({ id: s.id, text: s.content })),
-        nextDayPlan: getSectionsByType('next_day_plan').map(s => ({ id: s.id, text: s.content })),
-        notes: getSectionsByType('notes').map(s => ({ id: s.id, text: s.content }))
+        delays: expandSections(getSectionsByType('delays')),
+        tradesOnsite: expandSections(getSectionsByType('trades_onsite')),
+        meetings: expandSections(getSectionsByType('meetings')),
+        outOfScope: expandSections(getSectionsByType('out_of_scope')),
+        nextDayPlan: expandSections(getSectionsByType('next_day_plan')),
+        notes: expandSections(getSectionsByType('notes'))
       };
 
       const response = await fetch('/api/generate-pdf', {
@@ -193,7 +206,9 @@ export default function ViewLogPage() {
   };
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    // Add T00:00:00 to date-only strings to prevent UTC interpretation
+    const normalizedDate = dateString.includes('T') ? dateString : `${dateString}T00:00:00`;
+    return new Date(normalizedDate).toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'

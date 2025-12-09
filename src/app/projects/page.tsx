@@ -367,11 +367,11 @@ export default function ProjectsPage() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                       {project.start_date && project.end_date ? (
                         <div>
-                          <div>{new Date(project.start_date).toLocaleDateString()}</div>
-                          <div className="text-gray-500">to {new Date(project.end_date).toLocaleDateString()}</div>
+                          <div>{new Date(`${project.start_date}T00:00:00`).toLocaleDateString()}</div>
+                          <div className="text-gray-500">to {new Date(`${project.end_date}T00:00:00`).toLocaleDateString()}</div>
                         </div>
                       ) : project.start_date ? (
-                        <div>Started {new Date(project.start_date).toLocaleDateString()}</div>
+                        <div>Started {new Date(`${project.start_date}T00:00:00`).toLocaleDateString()}</div>
                       ) : (
                         '-'
                       )}

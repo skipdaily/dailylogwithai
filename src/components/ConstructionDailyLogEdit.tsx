@@ -420,10 +420,19 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
   const createDefaultItem = () => ({ id: generateId(), text: '' });
   const createDefaultArray = () => [createDefaultItem()];
 
+  // Helper to get local date in YYYY-MM-DD format (avoids UTC timezone issues)
+  const getLocalDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
   // Initialize state with unique IDs for all items
   const [logData, setLogData] = useState<DailyLogData>({
     id: logId,
-    date: new Date().toISOString().split('T')[0],
+    date: getLocalDateString(),
     superintendentName: '',
     projectId: null,
     projectName: '',
@@ -513,41 +522,52 @@ const ConstructionDailyLogEdit: React.FC<ConstructionDailyLogEditProps> = ({ log
           tradesOnsite: createDefaultArray(),
           meetings: createDefaultArray(),
           outOfScope: createDefaultArray(),
-          nextDayPlan: createDefaultArray(),
-          notes: createDefaultArray(),
+          nextDayPlan: [],
+          notes: [],
         };
 
         // Parse log sections into their respective arrays
+        // Group all sections by type to handle multiple rows per section type
         if (logData.log_sections) {
           const sections = logData.log_sections.sort((a: any, b: any) => a.order_num - b.order_num);
 
           sections.forEach((section: any) => {
+            // Each section content may contain multiple newline-separated items
             const items = section.content.split('\n').filter((text: string) => text.trim()).map((text: string) => ({
               id: generateId(),
               text: text.trim()
             }));
 
+            // Append items to existing array instead of overwriting
             switch (section.section_type) {
               case 'delays':
-                transformedLogData.delays = items.length > 0 ? items : createDefaultArray();
+                transformedLogData.delays.push(...items);
                 break;
               case 'trades_onsite':
-                transformedLogData.tradesOnsite = items.length > 0 ? items : createDefaultArray();
+                transformedLogData.tradesOnsite.push(...items);
                 break;
               case 'meetings':
-                transformedLogData.meetings = items.length > 0 ? items : createDefaultArray();
+                transformedLogData.meetings.push(...items);
                 break;
               case 'out_of_scope':
-                transformedLogData.outOfScope = items.length > 0 ? items : createDefaultArray();
+                transformedLogData.outOfScope.push(...items);
                 break;
               case 'next_day_plan':
-                transformedLogData.nextDayPlan = items.length > 0 ? items : createDefaultArray();
+                transformedLogData.nextDayPlan.push(...items);
                 break;
               case 'notes':
-                transformedLogData.notes = items.length > 0 ? items : createDefaultArray();
+                transformedLogData.notes.push(...items);
                 break;
             }
           });
+          
+          // Ensure each array has at least one empty item if empty
+          if (transformedLogData.delays.length === 0) transformedLogData.delays = createDefaultArray();
+          if (transformedLogData.tradesOnsite.length === 0) transformedLogData.tradesOnsite = createDefaultArray();
+          if (transformedLogData.meetings.length === 0) transformedLogData.meetings = createDefaultArray();
+          if (transformedLogData.outOfScope.length === 0) transformedLogData.outOfScope = createDefaultArray();
+          if (transformedLogData.nextDayPlan.length === 0) transformedLogData.nextDayPlan = createDefaultArray();
+          if (transformedLogData.notes.length === 0) transformedLogData.notes = createDefaultArray();
         }
 
         const contractorWorkSections = (logData.log_sections || []).filter((s: any) => s.section_type === 'contractor_work');

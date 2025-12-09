@@ -934,8 +934,8 @@ function ActionItemsContent() {
                         </td>
                         <td className="px-3 py-3 text-sm text-gray-900">
                           {item.due_date ? (
-                            <span className={`text-xs ${new Date(item.due_date) < new Date() ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
-                              {new Date(item.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            <span className={`text-xs ${new Date(`${item.due_date}T00:00:00`) < new Date() ? 'text-red-600 font-medium' : 'text-gray-600'}`}>
+                              {new Date(`${item.due_date}T00:00:00`).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </span>
                           ) : '-'}
                         </td>
